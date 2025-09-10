@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		08A5F68F2E640CB200664435 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 08D64C0D2E6401D00026FF72 /* FirebaseAuth */; };
+		08A5F6902E640CB200664435 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 08D64C0E2E6401D00026FF72 /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		08D64BF02E6401CF0026FF72 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -35,16 +40,6 @@
 			path = FlexaSwiftUI;
 			sourceTree = "<group>";
 		};
-		08D64BF22E6401CF0026FF72 /* FlexaSwiftUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = FlexaSwiftUITests;
-			sourceTree = "<group>";
-		};
-		08D64BFC2E6401CF0026FF72 /* FlexaSwiftUIUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = FlexaSwiftUIUITests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +47,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				08A5F6902E640CB200664435 /* FirebaseFirestore in Frameworks */,
+				08A5F68F2E640CB200664435 /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,8 +73,6 @@
 			isa = PBXGroup;
 			children = (
 				08D64BE42E6401CD0026FF72 /* FlexaSwiftUI */,
-				08D64BF22E6401CF0026FF72 /* FlexaSwiftUITests */,
-				08D64BFC2E6401CF0026FF72 /* FlexaSwiftUIUITests */,
 				08D64BE32E6401CD0026FF72 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -112,6 +107,8 @@
 			);
 			name = FlexaSwiftUI;
 			packageProductDependencies = (
+				08D64C0D2E6401D00026FF72 /* FirebaseAuth */,
+				08D64C0E2E6401D00026FF72 /* FirebaseFirestore */,
 			);
 			productName = FlexaSwiftUI;
 			productReference = 08D64BE22E6401CD0026FF72 /* FlexaSwiftUI.app */;
@@ -130,12 +127,7 @@
 			dependencies = (
 				08D64BF12E6401CF0026FF72 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				08D64BF22E6401CF0026FF72 /* FlexaSwiftUITests */,
-			);
 			name = FlexaSwiftUITests;
-			packageProductDependencies = (
-			);
 			productName = FlexaSwiftUITests;
 			productReference = 08D64BEF2E6401CF0026FF72 /* FlexaSwiftUITests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -153,12 +145,7 @@
 			dependencies = (
 				08D64BFB2E6401CF0026FF72 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				08D64BFC2E6401CF0026FF72 /* FlexaSwiftUIUITests */,
-			);
 			name = FlexaSwiftUIUITests;
-			packageProductDependencies = (
-			);
 			productName = FlexaSwiftUIUITests;
 			productReference = 08D64BF92E6401CF0026FF72 /* FlexaSwiftUIUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -195,6 +182,9 @@
 			);
 			mainGroup = 08D64BD92E6401CC0026FF72;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				08D64C0C2E6401D00026FF72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 08D64BE32E6401CD0026FF72 /* Products */;
 			projectDirPath = "";
@@ -399,19 +389,27 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Z28V839VF6;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Flexa: Move, Play, Recover";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Flexa.app.FlexaSwiftUI;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flexa.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				"SUPPORTED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -427,19 +425,28 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Z28V839VF6;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Flexa: Move, Play, Recover";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Flexa.app.FlexaSwiftUI;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flexa.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				"SUPPORTED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -453,11 +460,15 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Z28V839VF6;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Flexa.app.FlexaSwiftUITests;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flexa.appTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				"SUPPORTED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -472,11 +483,15 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Z28V839VF6;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Flexa.app.FlexaSwiftUITests;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flexa.appTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				"SUPPORTED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -490,10 +505,15 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Z28V839VF6;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Flexa.app.FlexaSwiftUIUITests;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flexa.appUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				"SUPPORTED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -507,10 +527,15 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Z28V839VF6;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
 				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Flexa.app.FlexaSwiftUIUITests;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.flexa.appUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				"SUPPORTED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -558,6 +583,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		08D64C0C2E6401D00026FF72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		08D64C0D2E6401D00026FF72 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08D64C0C2E6401D00026FF72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		08D64C0E2E6401D00026FF72 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08D64C0C2E6401D00026FF72 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 08D64BDA2E6401CC0026FF72 /* Project object */;
 }
