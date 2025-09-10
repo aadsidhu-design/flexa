@@ -195,7 +195,7 @@ struct AboutUsView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                     
-                    Text("Flexa combines cutting-edge technology with proven physiotherapy techniques to make rehabilitation engaging, effective, and accessible. Our AI-powered platform provides real-time feedback and personalized exercise programs to help patients recover faster and maintain long-term health.")
+                    Text("Flexa combines cutting-edge technology with proven physiotherapy techniques to make rehabilitation engaging, effective, and accessible. Our machine learning-powered platform provides real-time feedback and personalized exercise programs to help patients recover faster and maintain long-term health.")
                         .font(.body)
                         .foregroundColor(.gray)
                         .lineSpacing(4)
@@ -211,14 +211,14 @@ struct AboutUsView: View {
                     VStack(spacing: 12) {
                         FeatureRow(
                             icon: "camera.fill",
-                            title: "AI Pose Detection",
-                            description: "Advanced computer vision tracks your movements in real-time"
+                            title: "ML Pose Detection",
+                            description: "Advanced machine learning tracks your movements in real-time"
                         )
                         
                         FeatureRow(
                             icon: "brain.head.profile",
-                            title: "Gemini AI Analysis",
-                            description: "Intelligent feedback and personalized recommendations"
+                            title: "ML Analysis & SPARC",
+                            description: "Machine learning for ROM calculations and SPARC analysis"
                         )
                         
                         FeatureRow(
@@ -248,7 +248,7 @@ struct AboutUsView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                     
-                    Text("Built with SwiftUI for iOS, powered by Apple Vision for pose detection, Firebase for data management, and Google's Gemini AI for intelligent analysis. Our platform ensures your data privacy while delivering cutting-edge rehabilitation technology.")
+                    Text("Built with SwiftUI for iOS, powered by machine learning for pose detection and ROM/SPARC calculations, Firebase for data management. Our platform ensures your data privacy while delivering cutting-edge rehabilitation technology.")
                         .font(.body)
                         .foregroundColor(.gray)
                         .lineSpacing(4)
@@ -265,14 +265,28 @@ struct AboutUsView: View {
                         HStack {
                             Image(systemName: "envelope.fill")
                                 .foregroundColor(.green)
-                            Text("support@flexaapp.com")
+                            Text("aadjotsidhu@gmail.com")
                                 .foregroundColor(.gray)
                         }
                         
                         HStack {
                             Image(systemName: "globe")
                                 .foregroundColor(.green)
-                            Text("www.flexaapp.com")
+                            Text("justforeyes.net")
+                                .foregroundColor(.gray)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.green)
+                            Text("Developer: Aadjot Sidhu")
+                                .foregroundColor(.gray)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "stethoscope")
+                                .foregroundColor(.green)
+                            Text("Physician Mentor: Gloria Wu")
                                 .foregroundColor(.gray)
                         }
                     }
