@@ -22,13 +22,21 @@ struct GoalsSection: View {
                         .foregroundColor(.green)
                 }
             }
-            .padding(.horizontal)
+            .padding(Edge.Set.horizontal)
             
             LazyVGrid(columns: [
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 12) {
                 Button(action: {
+                    print("🔍 [GoalsSection] TAPPED 'Daily Reps' goal circle - current: \(goalsService.todayProgress.repsCompleted), target: \(goalsService.currentGoals.dailyReps)")
+                    print("🔍 [GoalsSection] Available goals data:")
+                    print("  - Daily Reps: \(goalsService.currentGoals.dailyReps)")
+                    print("  - Weekly Minutes: \(goalsService.currentGoals.weeklyMinutes)")
+                    print("  - ROM Target: \(goalsService.currentGoals.targetROM)")
+                    print("  - Today Progress: reps=\(goalsService.todayProgress.repsCompleted), minutes=\(goalsService.weeklyProgress.minutesCompleted), rom=\(goalsService.todayProgress.bestROM), days=\(goalsService.weeklyProgress.daysActive)")
+                    print("  - Latest goal changes: checking for any recent updates...")
+
                     showingGoalEditor = true
                 }) {
                     GoalCard(
@@ -42,6 +50,7 @@ struct GoalsSection: View {
                 .buttonStyle(PlainButtonStyle())
                 
                 Button(action: {
+                    print("🔍 [GoalsSection] TAPPED 'Weekly Minutes' goal circle - current: \(goalsService.weeklyProgress.minutesCompleted), target: \(goalsService.currentGoals.weeklyMinutes)")
                     showingGoalEditor = true
                 }) {
                     GoalCard(
@@ -53,8 +62,9 @@ struct GoalsSection: View {
                     )
                 }
                 .buttonStyle(PlainButtonStyle())
-                
+
                 Button(action: {
+                    print("🔍 [GoalsSection] TAPPED 'ROM Target' goal circle - current: \(Int(goalsService.todayProgress.bestROM)), target: \(Int(goalsService.currentGoals.targetROM))")
                     showingGoalEditor = true
                 }) {
                     GoalCard(
@@ -66,8 +76,9 @@ struct GoalsSection: View {
                     )
                 }
                 .buttonStyle(PlainButtonStyle())
-                
+
                 Button(action: {
+                    print("🔍 [GoalsSection] TAPPED 'Weekly Days' goal circle - current: \(goalsService.weeklyProgress.daysActive), target: 7")
                     showingGoalEditor = true
                 }) {
                     GoalCard(
@@ -80,7 +91,7 @@ struct GoalsSection: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            .padding(.horizontal)
+            .padding(Edge.Set.horizontal)
         }
         .fullScreenCover(isPresented: $showingGoalEditor) {
             GoalEditorView(isPresented: $showingGoalEditor)

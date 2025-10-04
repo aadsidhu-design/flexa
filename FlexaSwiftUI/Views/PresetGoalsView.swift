@@ -64,7 +64,7 @@ struct PresetGoalsView: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 VStack(spacing: 20) {
                     // Header
                     VStack(spacing: 8) {
@@ -94,7 +94,7 @@ struct PresetGoalsView: View {
                             }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(Edge.Set.horizontal)
                     
                     // Selected Preset Details
                     if let selected = selectedPreset {
@@ -110,10 +110,8 @@ struct PresetGoalsView: View {
         }
         .sheet(item: $selectedPreset) { preset in
             GoalCustomizationView(preset: preset) { finalGoals in
-                Task {
-                    try? await goalsService.updateGoals(finalGoals)
-                    dismiss()
-                }
+                goalsService.updateGoals(finalGoals)
+                dismiss()
             }
         }
     }
@@ -327,3 +325,4 @@ struct GoalPreset: Identifiable {
     PresetGoalsView()
         .environmentObject(GoalsAndStreaksService())
 }
+

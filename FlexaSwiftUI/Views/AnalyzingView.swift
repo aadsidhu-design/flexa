@@ -4,26 +4,20 @@ import Charts
 struct AnalyzingView: View {
     let sessionData: ExerciseSessionData
     @EnvironmentObject var navigationCoordinator: NavigationCoordinator
+    @Environment(\.dismiss) private var dismiss
     
     @State private var currentProgress: Double = 0
     @State private var currentStep = "Initializing analysis..."
-    @State private var showResults = false
     @State private var enhancedSessionData: ExerciseSessionData?
     @State private var aiAnalysis: ExerciseAnalysis?
-    @State private var analysisTimeout = false
-    @State private var selectedTab: AnalysisTab = .rom
     @State private var progress: Double = 0.0
     @State private var currentTask = "Initializing..."
     
     @EnvironmentObject var geminiService: GeminiService
     @EnvironmentObject var themeManager: ThemeManager
-    @EnvironmentObject var firebaseService: FirebaseService
+    @EnvironmentObject var backendService: BackendService
     @EnvironmentObject var motionService: SimpleMotionService
     
-    enum AnalysisTab: String, CaseIterable {
-        case rom = "ROM"
-        case sparc = "SPARC"
-    }
     
     private let analysisSteps = [
         "Processing exercise data...",
@@ -43,189 +37,53 @@ struct AnalyzingView: View {
                     motionService.stopSession()
                 }
             
-            if showResults, let sessionData = enhancedSessionData {
-                // Full-screen results with tabs
-                VStack(spacing: 0) {
-                    // Header
-                    VStack(spacing: 16) {
-                        Text("Analysis Complete")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                        
-                        // AI Score display
-                        if let analysis = aiAnalysis {
-                            HStack {
-                                VStack {
-                                    Text("AI Score")
-                                        .font(.headline)
-                                        .foregroundColor(.secondary)
-                                    Text("\(analysis.overallPerformance)")
-                                        .font(.title)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                }
-                                
-                                Spacer() 
-                                
-                                VStack {
-                                    Text("Reps")
-                                        .font(.headline)
-                                        .foregroundColor(.secondary)
-                                    Text("\(sessionData.reps)")
-                                        .font(.title)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                }
-                                
-                                Spacer() 
-                                
-                                VStack {
-                                    Text("Max ROM")
-                                        .font(.headline)
-                                        .foregroundColor(.secondary)
-                                    Text("\(String(format: "%.1f", sessionData.maxROM))°")
-                                        .font(.title)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                }
-                            }
-                            .padding()
-                            .background(Color.gray.opacity(0.2))
-                            .cornerRadius(12)
-                        }
-                        
-                        // Tab picker
-                        Picker("Analysis Type", selection: $selectedTab) {
-                            ForEach(AnalysisTab.allCases, id: \.self) { tab in
-                                Text(tab.rawValue).tag(tab)
-                            }
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .padding(.horizontal)
-                    }
-                    .padding()
+            // Always show loading view - no internal results screen
+            VStack(spacing: 40) {
+                Spacer()
+                
+                // Progress Circle
+                ZStack {
+                    Circle()
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 8)
+                        .frame(width: 120, height: 120)
                     
-                    // Chart display
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            switch selectedTab {
-                            case .rom:
-                                ROMChartView(sessionData: sessionData)
-                            case .sparc:
-                                SPARCChartView(sessionData: sessionData)
-                            }
-                            
-                            // AI Analysis section
-                            if let analysis = aiAnalysis {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("AI Analysis")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                    
-                                    if !analysis.strengths.isEmpty {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Strengths")
-                                                .font(.headline)
-                                                .foregroundColor(.green)
-                                            ForEach(analysis.strengths, id: \.self) { strength in
-                                                Text("• \(strength)")
-                                                    .foregroundColor(.white)
-                                            }
-                                        }
-                                    }
-                                    
-                                    if !analysis.areasForImprovement.isEmpty {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Areas for Improvement")
-                                                .font(.headline)
-                                                .foregroundColor(.orange)
-                                            ForEach(analysis.areasForImprovement, id: \.self) { area in
-                                                Text("• \(area)")
-                                                    .foregroundColor(.white)
-                                            }
-                                        }
-                                    }
-                                    
-                                    if !analysis.specificFeedback.isEmpty {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("Specific Feedback")
-                                                .font(.headline)
-                                                .foregroundColor(.blue)
-                                            Text(analysis.specificFeedback)
-                                                .foregroundColor(.white)
-                                        }
-                                    }
-                                }
-                                .padding()
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(12)
-                            }
-                        }
-                        .padding()
-                    }
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(
+                            LinearGradient(
+                                colors: [.green, .blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                        )
+                        .frame(width: 120, height: 120)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeInOut(duration: 0.5), value: progress)
                     
-                    // Continue button
-                    Button("Continue") {
-                        if let enhancedSessionData = enhancedSessionData, let aiAnalysis = aiAnalysis {
-                            navigationCoordinator.showResults(sessionData: enhancedSessionData, analysis: aiAnalysis, preSurvey: PreSurveyData(painLevel: 0, timestamp: Date(), exerciseReadiness: nil, previousExerciseHours: nil))
-                        }
-                    }
+                    Text("\(Int(progress * 100))%")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                }
+                
+                // Current Task
+                Text(currentTask)
                     .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(12)
-                    .padding()
-                }
-            } else {
-                // Loading view
-                VStack(spacing: 40) {
-                    Spacer()
-                    
-                    // Progress Circle
-                    ZStack {
-                        Circle()
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 8)
-                            .frame(width: 120, height: 120)
-                        
-                        Circle()
-                            .trim(from: 0, to: progress)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.green, .blue],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                style: StrokeStyle(lineWidth: 8, lineCap: .round)
-                            )
-                            .frame(width: 120, height: 120)
-                            .rotationEffect(.degrees(-90))
-                            .animation(.easeInOut(duration: 0.5), value: progress)
-                        
-                        Text("\(Int(progress * 100))%")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                    }
-                    
-                    // Current Task
-                    Text(currentTask)
-                        .font(.headline)
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                        .animation(.easeInOut(duration: 0.3), value: currentTask)
-                    
-                    Spacer()
-                }
-                .padding()
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
+                    .animation(.easeInOut(duration: 0.3), value: currentTask)
+                
+                Spacer()
             }
+            .padding()
         }
         .onAppear {
             startComprehensiveAnalysis()
         }
+        // Hide any navigation UI when presented in a NavigationStack
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
     }
     
     private func startComprehensiveAnalysis() {
@@ -236,7 +94,9 @@ struct AnalyzingView: View {
     
     @MainActor
     private func updateProgress(_ step: Int, _ task: String) {
-        let stepProgress = Double(step) / 5.0 // 5 total steps now
+        // Show 20%, 40%, 60%, 80%, 100% for steps 0..4
+        let totalSteps = 5.0
+        let stepProgress = min(1.0, (Double(step) + 1.0) / totalSteps)
         progress = stepProgress
         currentTask = task
         print("📈 [AnalyzingView] Progress: \(Int(stepProgress * 100))% - \(task)")
@@ -254,65 +114,143 @@ struct AnalyzingView: View {
         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
         print("📊 [AnalyzingView] Raw data processed")
         
-        // Step 2: Calculate comprehensive metrics
-        await MainActor.run { updateProgress(1, "Calculating comprehensive metrics...") }
-        let enhancedData = await calculateComprehensiveMetrics()
+        // Step 2: Analyze Universal3D ROM data (for handheld games)
+        await MainActor.run { updateProgress(1, "Analyzing movement patterns...") }
+        let romAnalysis = motionService.universal3DEngine.analyzeMovementPattern()
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        print("📊 [AnalyzingView] ROM analysis completed - Pattern: \(romAnalysis.pattern), Reps: \(romAnalysis.totalReps)")
+        
+        // Step 3: Calculate comprehensive metrics
+        await MainActor.run { updateProgress(2, "Calculating comprehensive metrics...") }
+        let enhancedData = await calculateComprehensiveMetrics(romAnalysis: romAnalysis)
         try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
         print("📊 [AnalyzingView] Metrics calculated - ROM: \(enhancedData.maxROM)°, SPARC: \(enhancedData.sparcScore)")
         
-        // Step 3: Generate AI analysis (this is the slow part)
-        await MainActor.run { updateProgress(2, "Generating AI analysis with Gemini...") }
+        // Step 4: Generate AI analysis (this is the slow part)
+        await MainActor.run { updateProgress(3, "Generating AI analysis with Gemini...") }
         print("🤖 [AnalyzingView] Calling Gemini API...")
         let analysis = await generateAIAnalysis(for: enhancedData)
         print("🤖 [AnalyzingView] AI analysis completed: \(analysis?.overallPerformance ?? 0) score")
         
-        // Step 4: Save session data
-        await MainActor.run { updateProgress(3, "Saving session data...") }
+        // Step 5: Save session data
+        await MainActor.run { updateProgress(4, "Saving session data...") }
         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
         print("💾 [AnalyzingView] Session data saved")
         
-        // Step 5: Prepare results display
-        await MainActor.run { updateProgress(4, "Preparing results display...") }
+        // Step 6: Prepare results display
+        await MainActor.run { updateProgress(5, "Preparing results display...") }
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
-        print("✅ [AnalyzingView] Analysis pipeline complete, navigating to results")
+        print("✅ [AnalyzingView] Analysis pipeline complete, showing results")
         await MainActor.run {
             let finalAnalysis = analysis ?? createFallbackAnalysis(for: enhancedData)
             print("📊 [AnalyzingView] Final analysis score: \(finalAnalysis.overallPerformance)")
-            navigationCoordinator.showResults(sessionData: enhancedData, analysis: finalAnalysis, preSurvey: PreSurveyData(painLevel: 0, timestamp: Date(), exerciseReadiness: nil, previousExerciseHours: nil))
+            
+            // Store the analysis in the Gemini service for ResultsView to access
+            geminiService.lastAnalysis = finalAnalysis
+            
+            self.enhancedSessionData = enhancedData
+            self.aiAnalysis = finalAnalysis
+            
+            // Ensure progress reaches 100% before navigating
+            self.progress = 1.0
+            self.currentTask = "Done"
+            
+            // Navigate to results. The NavigationCoordinator now replaces the analyzing entry
+            // with the results entry so we don't need to call dismiss() here.
+            navigationCoordinator.showResults(sessionData: enhancedData)
         }
     }
     
-    private func calculateComprehensiveMetrics() async -> ExerciseSessionData {
+    private func analyzeUniversal3DROMData() -> MovementAnalysisResult {
+        // Check if this is a handheld game that uses Universal3D ROM
+        let isHandheldGame = !motionService.isCameraExercise
+        
+        if isHandheldGame {
+            // Analyze the collected 3D movement data
+                let analysis = motionService.universal3DEngine.analyzeMovementPattern()
+                let repTimestamps = analysis.repTimestamps
+            
+            // Clear the collected data after analysis
+            motionService.universal3DEngine.clearCollectedData()
+            
+            print("📱 [AnalyzingView] Universal3D ROM Analysis:")
+            print("   Pattern: \(analysis.pattern)")
+            print("   Total Reps: \(analysis.totalReps)")
+            print("   Average ROM: \(String(format: "%.1f", analysis.avgROM))°")
+            print("   Max ROM: \(String(format: "%.1f", analysis.maxROM))°")
+            print("   ROM per Rep: \(analysis.romPerRep.map { String(format: "%.1f", $0) }.joined(separator: ", "))°")
+                print("   Rep Timestamps: \(repTimestamps)")
+            
+            return analysis
+        } else {
+            // Camera games don't use Universal3D ROM
+            return MovementAnalysisResult(
+                pattern: .unknown,
+                romPerRep: [],
+                repTimestamps: [],
+                totalReps: 0,
+                avgROM: 0.0,
+                maxROM: 0.0
+            )
+        }
+    }
+    
+    private func calculateComprehensiveMetrics(romAnalysis: MovementAnalysisResult) async -> ExerciseSessionData {
+        // Start from the data captured at game completion. This already contains
+        // the most reliable snapshot of ROM, reps, timestamps, and surveys.
         var enhancedData = sessionData
         
-        // Calculate SPARC if not available or invalid
-        if enhancedData.sparcHistory.isEmpty || enhancedData.sparcScore <= 0 {
-            let sparcService = SPARCCalculationService()
-            
-            // Get motion data from SimpleMotionService
-            let sessionData = motionService.getFullSessionData()
-            
-            if let accelData = sessionData["accelerometerData"] as? [SIMD3<Double>],
-               !accelData.isEmpty {
-                // Calculate SPARC from accelerometer data
-                let sparcValue = sparcService.calculateSPARC(from: accelData)
-                enhancedData.sparcScore = sparcValue
-                
-                // Generate SPARC history with realistic variation
-                let baseValue = sparcValue
-                enhancedData.sparcHistory = (0..<max(10, enhancedData.romHistory.count)).map { i in
-                    let variation = sin(Double(i) * 0.5) * 0.2 // ±0.2 variation
-                    return max(0, min(10, baseValue + variation))
-                }
-            } else {
-                // Fallback calculation from ROM data
-                let sparcValue = sparcService.calculateSPARCFromROM(romData: enhancedData.romHistory)
-                enhancedData.sparcScore = sparcValue
-                enhancedData.sparcHistory = Array(repeating: sparcValue, count: max(1, enhancedData.romHistory.count))
+        // Attempt to merge in any richer metrics that may still be available
+        // from the motion service (e.g. SPARC series, AI scores, etc.). Only
+        // adopt values that add new information so we never overwrite valid
+        // captured data with reset defaults.
+        let liveData = motionService.getFullSessionData()
+        
+        if liveData.reps > enhancedData.reps {
+            enhancedData.reps = liveData.reps
+        }
+        if liveData.maxROM > enhancedData.maxROM {
+            enhancedData.maxROM = liveData.maxROM
+        }
+        if !liveData.romHistory.isEmpty && enhancedData.romHistory.isEmpty {
+            enhancedData.romHistory = liveData.romHistory
+            enhancedData.averageROM = liveData.romHistory.reduce(0, +) / Double(liveData.romHistory.count)
+        }
+        if !liveData.repTimestamps.isEmpty && enhancedData.repTimestamps.isEmpty {
+            enhancedData.repTimestamps = liveData.repTimestamps
+        }
+        if !liveData.sparcHistory.isEmpty && enhancedData.sparcHistory.isEmpty {
+            enhancedData.sparcHistory = liveData.sparcHistory
+        }
+        if liveData.sparcScore > 0 && enhancedData.sparcScore == 0 {
+            enhancedData.sparcScore = liveData.sparcScore
+        }
+        
+        // Override with Universal3D ROM analysis for handheld games when we
+        // actually have rep data waiting in the engine snapshot.
+        let isHandheldGame = !motionService.isCameraExercise
+        if isHandheldGame && romAnalysis.totalReps > 0 {
+            if enhancedData.reps == 0 {
+                enhancedData.reps = romAnalysis.totalReps
+            } else if romAnalysis.totalReps > enhancedData.reps + 1 {
+                print("⚠️ [AnalyzingView] Universal3D rep count (\(romAnalysis.totalReps)) exceeds captured reps (\(enhancedData.reps)) — keeping captured value")
+            }
+
+            if romAnalysis.maxROM > enhancedData.maxROM {
+                enhancedData.maxROM = romAnalysis.maxROM
+            }
+            if enhancedData.romHistory.isEmpty && !romAnalysis.romPerRep.isEmpty {
+                enhancedData.romHistory = romAnalysis.romPerRep
+            }
+            if enhancedData.repTimestamps.isEmpty && !romAnalysis.repTimestamps.isEmpty {
+                enhancedData.repTimestamps = romAnalysis.repTimestamps.map { Date(timeIntervalSince1970: $0) }
             }
             
-            print("🎯 [SPARC] Calculated SPARC score: \(enhancedData.sparcScore)")
+            print("📱 [AnalyzingView] Merged Universal3D analysis where helpful:")
+            print("   Reps: \(enhancedData.reps)")
+            print("   Max ROM: \(enhancedData.maxROM)°")
+            print("   ROM History: \(enhancedData.romHistory.count) values")
         }
         
         return enhancedData
@@ -380,7 +318,7 @@ struct AnalyzingView: View {
         // Calculate performance score (0-100) with better weighting
         let romScore = min(100, (rom / 120.0) * 100) // 120° is excellent
         let repScore = min(100, Double(reps) * 3) // 33 reps is excellent
-        let sparcScore = min(100, sparc * 10) // SPARC 0-10 scale
+    let sparcScore = min(100, sparc) // SPARC is normalized to 0-100 now
         let overallScore = Int((romScore * 0.5 + repScore * 0.3 + sparcScore * 0.2))
         
         // Generate detailed 8-10 sentence feedback
@@ -401,11 +339,13 @@ struct AnalyzingView: View {
         feedbackParts.append("Your peak ROM moments show you're capable of \(rom >= 90 ? "excellent extension" : "reaching further when focused").")
         
         // Smoothness Analysis (4-5 sentences)
-        feedbackParts.append("\n\nYour movement smoothness score was \(String(format: "%.1f", sparc))/10, indicating \(sparc >= 7 ? "very smooth" : sparc >= 5 ? "moderately smooth" : "developing") control.")
-        if sparc >= 7 {
+        let smoothnessDescriptor = sparc >= 70 ? "very smooth" : sparc >= 50 ? "moderately smooth" : "developing"
+        let smoothnessScoreText = String(format: "%.0f", sparc)
+        feedbackParts.append("\n\nYour movement smoothness score was \(smoothnessScoreText), indicating \(smoothnessDescriptor) control.")
+        if sparc >= 70 {
             feedbackParts.append("Your movements were well-controlled and fluid throughout the exercise.")
             feedbackParts.append("This level of smoothness reduces strain and promotes better muscle activation.")
-        } else if sparc >= 5 {
+        } else if sparc >= 50 {
             feedbackParts.append("Your movement control is improving, with some occasional jerkiness.")
             feedbackParts.append("Try to maintain a more consistent pace throughout each repetition.")
         } else {
@@ -424,7 +364,7 @@ struct AnalyzingView: View {
         if rom >= 90 {
             strengths.append("Excellent range of motion")
         }
-        if sparc >= 7 {
+        if sparc >= 70 {
             strengths.append("Very smooth movement control")
         }
         if reps >= 20 {
@@ -438,7 +378,7 @@ struct AnalyzingView: View {
         if rom < 90 {
             improvements.append("Increase range of motion to \(min(Int(rom) + 15, 120))°")
         }
-        if sparc < 7 {
+        if sparc < 70 {
             improvements.append("Focus on smoother, more controlled movements")
         }
         if reps < 20 {
@@ -462,60 +402,8 @@ struct AnalyzingView: View {
 
 struct TimeoutError: Error {}
     
-    // Upload is intentionally deferred to after post-survey in UnifiedResultsView
+    // Upload is intentionally deferred to after post-survey
     
-    private func getChartData() -> [ChartDataPoint] {
-        let data = enhancedSessionData ?? sessionData
-        
-        switch selectedTab {
-        case .rom:
-            return getROMChartData(from: data)
-        case .sparc:
-            return getSPARCChartData(from: data)
-        }
-    }
-    
-    private func getROMChartData(from data: ExerciseSessionData) -> [ChartDataPoint] {
-        if !data.romHistory.isEmpty {
-            return data.romHistory.enumerated().map { index, rom in
-                ChartDataPoint(
-                    x: Double(index) + 1,
-                    y: rom
-                )
-            }
-        } else if !data.romData.isEmpty {
-            return data.romData.enumerated().map { index, romPoint in
-                ChartDataPoint(
-                    x: Double(index) * 0.1,
-                    y: romPoint.angle
-                )
-            }
-        } else {
-            // Fallback to max ROM
-            return [ChartDataPoint(x: 0, y: data.maxROM)]
-        }
-    }
-    
-    private func getSPARCChartData(from data: ExerciseSessionData) -> [ChartDataPoint] {
-        if !data.sparcHistory.isEmpty {
-            return data.sparcHistory.enumerated().map { index, sparcValue in
-                ChartDataPoint(
-                    x: Double(index) + 1,
-                    y: abs(sparcValue) * 10
-                )
-            }
-        } else if !data.sparcData.isEmpty {
-            return data.sparcData.enumerated().map { index, sparcPoint in
-                ChartDataPoint(
-                    x: Double(index) * 0.1,
-                    y: abs(sparcPoint.sparc) * 10
-                )
-            }
-        } else {
-            let sparcValue = data.sparcScore
-            return [ChartDataPoint(x: 0, y: abs(sparcValue) * 10)]
-        }
-    }
 }
 
 struct ChartDataPoint: Identifiable {
@@ -534,5 +422,5 @@ struct ChartDataPoint: Identifiable {
             duration: 90.0
         )
     )
-    .environmentObject(FirebaseService())
+    .environmentObject(BackendService())
 }

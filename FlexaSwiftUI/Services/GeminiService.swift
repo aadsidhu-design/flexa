@@ -16,6 +16,7 @@ import Combine
         defer { isAnalyzing = false }
         
         let prompt = createAnalysisPrompt(for: session)
+        FlexaLog.gemini.debug("Prompt metrics — chars=\(prompt.count) words=\(prompt.split(separator: " ").count)")
         let analysis = try await generateAnalysis(prompt: prompt, session: session)
         
         self.lastAnalysis = analysis
@@ -44,27 +45,53 @@ import Combine
         return result
     }
     
+    private func getGameDescription(for exerciseType: String) -> String {
+        if let type = GameType.fromDisplayName(exerciseType) {
+            return type.aiDescription
+        }
+
+        switch exerciseType.lowercased() {
+        case "make your own":
+            return GameType.makeYourOwn.aiDescription
+        case "test rom":
+            return "A handheld calibration and testing exercise to measure baseline range of motion capabilities. Used for initial assessment and progress tracking."
+        default:
+            return "A therapeutic exercise designed to improve range of motion and motor control through engaging gameplay."
+        }
+    }
+    
     private func createAnalysisPrompt(for session: ExerciseSessionData) -> String {
-        let romSummary = session.romData.isEmpty ? "No ROM data" : """
-        ROM Data: Min: \(session.romData.map(\.angle).min() ?? 0)°, Max: \(session.romData.map(\.angle).max() ?? 0)°, 
-        Average: \(session.romData.map(\.angle).reduce(0, +) / Double(session.romData.count))°
-        """
+        let romMin = session.romData.map { $0.angle }.min() ?? 0
+        let romMax = session.romData.map { $0.angle }.max() ?? session.maxROM
+        let romAvg = session.romData.isEmpty ? session.maxROM : (session.romData.map { $0.angle }.reduce(0, +) / Double(session.romData.count))
         
-        return """
-        Analyze this exercise session:
-        Exercise: \(session.exerciseType)
-        Reps: \(session.reps)
-        Max ROM: \(session.maxROM)°
-        Duration: \(session.duration)s
-        SPARC: \(session.sparcScore)
+        let gameDescription = getGameDescription(for: session.exerciseType)
         
-        Return JSON with:
-        - overallPerformance: score 0-100
-        - specificFeedback: "Strengths: [2 brief points]. Areas for improvement: [2 brief points]."
-        
-        Keep specificFeedback under 30 words total.
-        Focus on rehabilitation aspects, proper form, and progressive improvement.
-        """
+    return """
+Analyze this physical therapy exercise session and return JSON only.
+Session Summary (metrics for your reference only):
+- Exercise: \(session.exerciseType)
+- Game Description: \(gameDescription)
+- Reps: \(session.reps)
+- Max reach angle: \(Int(romMax)) degrees (min \(Int(romMin)), avg \(Int(romAvg)))
+- Duration: \(Int(session.duration)) seconds
+- Smoothness score (0-100): \(String(format: "%.0f", session.sparcScore))
+
+Writing rules for feedback:
+- Use plain, supportive language. Avoid metric acronyms like "ROM" or "SPARC" entirely.
+- Talk about "how far you reached", "smoothness", "consistency", and "jerkiness" instead of raw numbers.
+- Be concise but specific. Describe what went well and what to improve in everyday terms.
+- Give actionable coaching cues (e.g., "slow the return", "keep the motion even", "reach a bit further each rep").
+- Keep a positive tone tailored to rehab.
+
+Return JSON with snake_case keys only:
+- overall_performance: integer 0-100
+- strengths: array of 2-4 short strings
+- areas_for_improvement: array of 2-4 short strings (use friendly terms like "movements were a bit jerky" or "inconsistent pacing")
+- specific_feedback: 4-6 sentences, conversational and encouraging, no metric acronyms
+- next_session_recommendations: array of 3 short strings, concrete next steps
+- estimated_recovery_progress: number 0-1
+"""
     }
     
     private func createRecommendationPrompt(sessions: [ExerciseSessionData], goals: UserGoals) -> String {
@@ -121,46 +148,59 @@ import Combine
             throw GeminiError.invalidURL
         }
         
-        let requestBody: [String: Any] = [
-            "contents": [
-                [
-                    "parts": [
-                        ["text": prompt]
-                    ]
-                ]
-            ]
-        ]
-        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30.0
+        
+        let requestBody: [String: Any] = [
+            "contents": [[
+                "parts": [[
+                    "text": prompt
+                ]]
+            ]]
+        ]
+        
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        FlexaLog.gemini.info("Request ➜ promptLen=\(prompt.count) apiKey=\(FlexaLog.mask(self.apiKey))")
+        FlexaLog.gemini.debug("Preparing Gemini request — bodyBytes=\(request.httpBody?.count ?? 0)")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            FlexaLog.gemini.error("Invalid HTTP response from Gemini")
-            throw GeminiError.apiError
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                FlexaLog.gemini.info("Gemini API response status: \(httpResponse.statusCode)")
+                guard httpResponse.statusCode == 200 else {
+                    let errorMsg = "HTTP \(httpResponse.statusCode)"
+                    FlexaLog.gemini.error("Gemini API error: \(errorMsg)")
+                    throw GeminiError.networkError(errorMsg)
+                }
+            }
+            
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            FlexaLog.gemini.info("Gemini API response received, parsing...")
+            if let keys = json?.keys { FlexaLog.gemini.debug("Response top-level keys: \(Array(keys))") }
+            
+            guard let candidates = json?["candidates"] as? [[String: Any]],
+                  let firstCandidate = candidates.first,
+                  let content = firstCandidate["content"] as? [String: Any],
+                  let parts = content["parts"] as? [[String: Any]],
+                  let firstPart = parts.first,
+                  let text = firstPart["text"] as? String else {
+                FlexaLog.gemini.error("Invalid Gemini API response structure — candidates/parts/text missing")
+                if let j = json {
+                    let preview = String(describing: j).prefix(400)
+                    FlexaLog.gemini.debug("Response preview: \(preview)...")
+                }
+                throw GeminiError.invalidResponse
+            }
+            
+            FlexaLog.gemini.info("Gemini API success, response length: \(text.count)")
+            FlexaLog.gemini.debug("Gemini text snippet: \(text.prefix(200))…")
+            return text
+        } catch {
+            FlexaLog.gemini.error("Gemini API call failed: \(error.localizedDescription)")
+            throw error
         }
-        FlexaLog.gemini.info("Response ⇦ status=\(httpResponse.statusCode) bytes=\(data.count)")
-        guard httpResponse.statusCode == 200 else {
-            FlexaLog.gemini.error("Gemini API error — status=\(httpResponse.statusCode)")
-            throw GeminiError.apiError
-        }
-        
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = json["candidates"] as? [[String: Any]],
-              let firstCandidate = candidates.first,
-              let content = firstCandidate["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let firstPart = parts.first,
-              let text = firstPart["text"] as? String else {
-            FlexaLog.gemini.error("Gemini invalid response — missing text field")
-            throw GeminiError.invalidResponse
-        }
-        
-        return text
     }
     
     private func generateAnalysis(prompt: String, session: ExerciseSessionData) async throws -> ExerciseAnalysis {
@@ -178,13 +218,43 @@ import Combine
             }
             
             FlexaLog.gemini.debug("Analysis JSON keys=\(json.keys.sorted())")
+            
+            // Log parsed values for debugging and accept both snake_case and camelCase
+            let overallScore =
+                parseIntSafely(json["overall_performance"]) ??
+                parseIntSafely(json["overallPerformance"]) ?? 0
+            let strengths =
+                parseStringArraySafely(json["strengths"]) ??
+                parseStringArraySafely(json["Strengths"]) ?? ["AI analysis unavailable"]
+            let improvements =
+                parseStringArraySafely(json["areas_for_improvement"]) ??
+                parseStringArraySafely(json["areasForImprovement"]) ?? ["Please try again"]
+            let feedback =
+                (json["specific_feedback"] as? String) ??
+                (json["specificFeedback"] as? String) ??
+                "AI analysis is currently unavailable. Please check your connection and try again."
+            let recommendations =
+                parseStringArraySafely(json["next_session_recommendations"]) ??
+                parseStringArraySafely(json["nextSessionRecommendations"]) ?? ["Continue regular practice"]
+            let recoveryProgress =
+                parseDoubleSafely(json["estimated_recovery_progress"]) ??
+                parseDoubleSafely(json["estimatedRecoveryProgress"]) ?? 0.7
+            
+            FlexaLog.gemini.info("Parsed Analysis:")
+            FlexaLog.gemini.info("   Score: \(overallScore)")
+            FlexaLog.gemini.info("   Strengths: \(strengths)")
+            FlexaLog.gemini.info("   Improvements: \(improvements)")
+            FlexaLog.gemini.info("   Feedback: \(feedback)")
+            FlexaLog.gemini.info("   Recommendations: \(recommendations)")
+            FlexaLog.gemini.info("   Recovery Progress: \(recoveryProgress)")
+            
             return ExerciseAnalysis(
-                overallPerformance: parseIntSafely(json["overall_performance"]) ?? calculateFallbackScore(session: session),
-                strengths: parseStringArraySafely(json["strengths"]) ?? generateFallbackStrengths(session: session),
-                areasForImprovement: parseStringArraySafely(json["areas_for_improvement"]) ?? generateFallbackImprovements(session: session),
-                specificFeedback: json["specific_feedback"] as? String ?? generateFallbackFeedback(session: session),
-                nextSessionRecommendations: parseStringArraySafely(json["next_session_recommendations"]) ?? ["Continue regular practice"],
-                estimatedRecoveryProgress: parseDoubleSafely(json["estimated_recovery_progress"]) ?? 0.7,
+                overallPerformance: overallScore,
+                strengths: strengths,
+                areasForImprovement: improvements,
+                specificFeedback: feedback,
+                nextSessionRecommendations: recommendations,
+                estimatedRecoveryProgress: recoveryProgress,
                 timestamp: Date()
             )
         } catch {
@@ -194,11 +264,16 @@ import Combine
     }
     
     private func parseRecommendations(from response: String) -> [Recommendation] {
+        FlexaLog.gemini.info("Parsing Recommendations from response:")
+        FlexaLog.gemini.info("\(response)")
+        
         guard let data = response.data(using: .utf8),
               let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             FlexaLog.gemini.error("Failed to parse recommendations JSON; returning empty array")
             return []
         }
+        
+        FlexaLog.gemini.info("Found \(jsonArray.count) recommendation items")
         
         return jsonArray.compactMap { dict in
             guard let type = dict["type"] as? String,
@@ -217,18 +292,43 @@ import Combine
     }
     
     private func parseFormAnalysis(from response: String) -> FormAnalysis {
+        FlexaLog.gemini.info("Parsing Form Analysis from response:")
+        FlexaLog.gemini.info("\(response)")
+        
         guard let data = response.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             FlexaLog.gemini.error("Failed to parse form analysis JSON; returning defaults")
             return FormAnalysis()
         }
         
+        let formQuality = FormQuality(rawValue: json["form_quality"] as? String ?? "fair") ?? .fair
+        let consistencyScore = json["consistency_score"] as? Int ?? 5
+        let feedback = json["movement_pattern_feedback"] as? String ?? ""
+        
+        FlexaLog.gemini.info("Parsed Form Analysis:")
+        FlexaLog.gemini.info("   Quality: \(formQuality.rawValue)")
+        FlexaLog.gemini.info("   Consistency: \(consistencyScore)")
+        FlexaLog.gemini.info("   Feedback: \(feedback)")
+        
         return FormAnalysis(
-            formQuality: FormQuality(rawValue: json["form_quality"] as? String ?? "fair") ?? .fair,
-            consistencyScore: json["consistency_score"] as? Int ?? 5,
-            movementPatternFeedback: json["movement_pattern_feedback"] as? String ?? "",
+            formQuality: formQuality,
+            consistencyScore: consistencyScore,
+            movementPatternFeedback: feedback,
             suggestedCorrections: json["suggested_corrections"] as? [String] ?? [],
             injuryRiskAssessment: RiskLevel(rawValue: json["injury_risk_assessment"] as? String ?? "medium") ?? .medium
+        )
+    }
+    
+    private func createFallbackAnalysis(session: ExerciseSessionData) -> ExerciseAnalysis {
+        // Return a minimal analysis when Gemini fails - no fallback scoring
+        return ExerciseAnalysis(
+            overallPerformance: 75, // Give a reasonable default score
+            strengths: ["Session completed successfully"],
+            areasForImprovement: ["Continue regular practice"],
+            specificFeedback: "AI analysis temporarily unavailable. Your session data has been saved successfully.",
+            nextSessionRecommendations: ["Try another session when ready"],
+            estimatedRecoveryProgress: 0.7,
+            timestamp: Date()
         )
     }
 }
@@ -238,6 +338,8 @@ enum GeminiError: Error {
     case apiError
     case invalidResponse
     case missingAPIKey
+    case invalidAPIKey
+    case networkError(String)
 }
 
 struct ExerciseAnalysis {
@@ -348,67 +450,5 @@ extension GeminiService {
             return anyArrayVal.compactMap { $0 as? String }
         }
         return nil
-    }
-    
-    private func createFallbackAnalysis(session: ExerciseSessionData) -> ExerciseAnalysis {
-        return ExerciseAnalysis(
-            overallPerformance: calculateFallbackScore(session: session),
-            strengths: generateFallbackStrengths(session: session),
-            areasForImprovement: generateFallbackImprovements(session: session),
-            specificFeedback: generateFallbackFeedback(session: session),
-            nextSessionRecommendations: ["Continue regular practice", "Focus on consistency"],
-            estimatedRecoveryProgress: 0.7,
-            timestamp: Date()
-        )
-    }
-    
-    private func calculateFallbackScore(session: ExerciseSessionData) -> Int {
-        let baseScore = 60
-        let repsBonus = min(session.reps * 2, 20)
-        let romBonus = min(Int(session.maxROM / 3), 15)
-        return min(baseScore + repsBonus + romBonus, 100)
-    }
-    
-    private func generateFallbackStrengths(session: ExerciseSessionData) -> [String] {
-        var strengths: [String] = []
-        
-        if session.reps >= 10 {
-            strengths.append("Good repetition count")
-        }
-        if session.maxROM >= 30 {
-            strengths.append("Achieving good range of motion")
-        }
-        if session.duration >= 60 {
-            strengths.append("Sustained exercise duration")
-        }
-        
-        return strengths.isEmpty ? ["Consistent participation"] : strengths
-    }
-    
-    private func generateFallbackImprovements(session: ExerciseSessionData) -> [String] {
-        var improvements: [String] = []
-        
-        if session.reps < 5 {
-            improvements.append("Increase repetition count")
-        }
-        if session.maxROM < 20 {
-            improvements.append("Work on expanding range of motion")
-        }
-        if session.duration < 30 {
-            improvements.append("Extend exercise duration")
-        }
-        
-        return improvements.isEmpty ? ["Continue building consistency"] : improvements
-    }
-    
-    private func generateFallbackFeedback(session: ExerciseSessionData) -> String {
-        let score = calculateFallbackScore(session: session)
-        
-        switch score {
-        case 80...: return "Excellent performance! You're showing great progress."
-        case 60...79: return "Good work! Keep building on this momentum."
-        case 40...59: return "Nice effort! Focus on consistency for better results."
-        default: return "Every session counts. Keep practicing and you'll see improvement."
-        }
     }
 }

@@ -167,7 +167,7 @@ struct SettingsStatusRow: View {
 
 struct AboutUsView: View {
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 VStack(spacing: 16) {
@@ -216,6 +216,12 @@ struct AboutUsView: View {
                         )
                         
                         FeatureRow(
+                            icon: "iphone",
+                            title: "AR 3D Phone Tracking",
+                            description: "ARKit-based 3D positional tracking for precise movement analysis"
+                        )
+                        
+                        FeatureRow(
                             icon: "brain.head.profile",
                             title: "ML Analysis & SPARC",
                             description: "Machine learning for ROM calculations and SPARC analysis"
@@ -248,7 +254,7 @@ struct AboutUsView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                     
-                    Text("Built with SwiftUI for iOS, powered by machine learning for pose detection and ROM/SPARC calculations, Firebase for data management. Our platform ensures your data privacy while delivering cutting-edge rehabilitation technology.")
+                    Text("Built with SwiftUI for iOS, powered by machine learning for pose detection and ROM/SPARC calculations. Our platform ensures your data privacy while delivering cutting-edge rehabilitation technology.")
                         .font(.body)
                         .foregroundColor(.gray)
                         .lineSpacing(4)
@@ -279,14 +285,21 @@ struct AboutUsView: View {
                         HStack {
                             Image(systemName: "person.fill")
                                 .foregroundColor(.green)
-                            Text("Developer: Aadjot Sidhu")
+                            Text("Lead Developer: Aadjot Sidhu")
+                                .foregroundColor(.gray)
+                        }
+                        
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.green)
+                            Text("Developer: Sahej Sidhu")
                                 .foregroundColor(.gray)
                         }
                         
                         HStack {
                             Image(systemName: "stethoscope")
                                 .foregroundColor(.green)
-                            Text("Physician Mentor: Gloria Wu")
+                            Text("Physician: Gloria Wu")
                                 .foregroundColor(.gray)
                         }
                     }

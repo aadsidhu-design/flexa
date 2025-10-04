@@ -1,0 +1,29 @@
+=== REBUILT COMPONENTS MAPPING ===
+
+SERVICES:
+- HandheldMotionService.swift -> Replaces SimpleMotionService for handheld games
+- CameraVisionService.swift -> Replaces SimpleMotionService for camera games
+- RebuildSPARCService.swift -> New SPARC calculation service
+- RebuildDataStorageService.swift -> Enhanced session storage
+- ServiceBridge.swift -> Migration helper
+
+GAMES (Handheld):
+- RebuildFruitSlicerGame.swift -> Replaces OptimizedFruitSlicerGameView
+- RebuildFanTheFlameGame.swift -> Replaces FanOutTheFlameGameView
+- RebuildWitchBrewGame.swift -> Replaces OptimizedWitchBrewGameView
+
+GAMES (Camera):
+- RebuildBalloonPopGame.swift -> Replaces BalloonPopGameView
+- RebuildConstellationGame.swift -> New implementation
+- RebuildWallClimbersGame.swift -> Replaces WallClimbersGameView
+
+NAVIGATION:
+- RebuildNavigationController.swift -> New instant navigation system
+- RebuildResultsView -> Enhanced results with instant routing
+- RebuildPostSurveyView -> 1-10 scale survey with proper navigation
+
+APP STRUCTURE:
+- RebuildFlexaSwiftUIApp.swift -> New main app entry point
+- InstructionsView.swift -> Unified instructions for all games
+- FirebaseConfig.swift -> Firebase configuration
+

@@ -19,16 +19,31 @@ class MovementPatternAnalyzer: ObservableObject {
         compensatoryMovements.removeAll()
         suggestions.removeAll()
         
-        // Analyze based on exercise type
-        switch exerciseType.lowercased() {
-        case "fruit slicer", "arm raise":
-            analyzeArmRaisePattern(keypoints)
-        case "wall climbers":
-            analyzeWallClimbersPattern(keypoints)
-        case "hammer time":
-            analyzeHammerPattern(keypoints)
-        default:
-            analyzeGeneralPattern(keypoints)
+        if let gameType = GameType.fromDisplayName(exerciseType) {
+            switch gameType {
+            case .fruitSlicer, .followCircle, .constellationMaker:
+                analyzeArmRaisePattern(keypoints)
+            case .wallClimbers:
+                analyzeWallClimbersPattern(keypoints)
+            case .fanOutFlame:
+                analyzeHammerPattern(keypoints)
+            case .balloonPop:
+                analyzeArmRaisePattern(keypoints)
+            case .makeYourOwn:
+                analyzeGeneralPattern(keypoints)
+            }
+        } else {
+            // Legacy / custom exercise names
+            switch exerciseType.lowercased() {
+            case "fruit slicer", "arm raise", "pendulum swing", "pendulum circles", "arm raises":
+                analyzeArmRaisePattern(keypoints)
+            case "wall climbers", "wall climb":
+                analyzeWallClimbersPattern(keypoints)
+            case "hammer time", "fan out the flame", "scapular retractions":
+                analyzeHammerPattern(keypoints)
+            default:
+                analyzeGeneralPattern(keypoints)
+            }
         }
         
         // Calculate overall movement quality

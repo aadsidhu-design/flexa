@@ -1,20 +1,21 @@
 import SwiftUI
+import Combine
 
 struct HomeView: View {
-    @EnvironmentObject var firebaseService: FirebaseService
+    @EnvironmentObject var backendService: BackendService
     @EnvironmentObject var goalsService: GoalsService
     @EnvironmentObject var streaksService: GoalsAndStreaksService
-    @EnvironmentObject var recommendationsEngine: RecommendationsEngine
     @EnvironmentObject var themeManager: ThemeManager
 
     @State private var recentSessions: [ExerciseSessionData] = []
     @State private var isLoading = true
     @State private var goalsLoaded = false
+    @State private var showingAllActivities = false
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                LazyVStack(spacing: 24) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 24) {
                     // Welcome Header
                     WelcomeHeader()
                         .padding(.top, 8)
@@ -43,7 +44,7 @@ struct HomeView: View {
                         }
                         .frame(height: 80)
                     } else if !recentSessions.isEmpty {
-                        RecentActivitiesSection(sessions: recentSessions)
+                        RecentActivitiesSection(sessions: recentSessions, onSeeAll: { showingAllActivities = true })
                             .padding(.vertical, 8)
                     } else {
                         VStack(spacing: 8) {
@@ -69,10 +70,20 @@ struct HomeView: View {
             .navigationBarHidden(true)
             .onAppear {
                 loadRecentSessions()
-                // Don't block UI with recommendations - load in background
-                Task.detached(priority: .background) {
-                    await recommendationsEngine.generatePersonalizedRecommendations()
-                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .sessionUploadCompleted)) { _ in
+                // Refresh goals when new session data is available
+                goalsService.refreshGoals()
+                streaksService.refreshGoals()
+                // Also refresh recent sessions to show new activity
+                loadRecentSessions()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataCleared"))) { _ in
+                // Refresh data when all data is cleared
+                loadRecentSessions()
+            }
+            .sheet(isPresented: $showingAllActivities) {
+                AllActivitiesListView()
             }
         }
     }
@@ -84,9 +95,9 @@ struct HomeView: View {
         isLoading = true
         print("🏠 [HOME-DEBUG] Step 1: Set loading state")
         
-        // Load from local cache instantly - NO Firebase calls!
+        // Load from local cache instantly - NO backend calls (local-first)!
         let cacheStartTime = Date()
-        print("🏠 [HOME-DEBUG] Step 2: Accessing LocalDataManager...")
+    print("🏠 [HOME-DEBUG] Step 2: Accessing LocalDataManager...")
         let localData = LocalDataManager.shared
         let cacheAccessTime = Date().timeIntervalSince(cacheStartTime)
         print("🏠 [HOME-DEBUG] ✅ LocalDataManager accessed in \(String(format: "%.3f", cacheAccessTime))s")
@@ -124,8 +135,14 @@ struct HomeView: View {
         let updateTime = Date().timeIntervalSince(updateStartTime)
         print("🏠 [HOME-DEBUG] ✅ Goals updated in \(String(format: "%.3f", updateTime))s")
         
+        // Recompute goal rings (daily averages) from comprehensive cache
+        streaksService.refreshGoals()
         self.goalsLoaded = true
         print("🏠 [HOME-DEBUG] Step 8: Set goals loaded state")
+        
+        // Refresh goals to show updated progress
+        goalsService.refreshGoals()
+        print("🏠 [HOME-DEBUG] Step 9: Refreshed goals from LocalDataManager")
         
         let totalTime = Date().timeIntervalSince(overallStartTime)
         print("🏠 [HOME-DEBUG] 🎯 TOTAL loadRecentSessions time: \(String(format: "%.3f", totalTime))s")
@@ -301,9 +318,10 @@ struct ActivityRingsLoadingView: View {
 
 #Preview {
     HomeView()
-        .environmentObject(FirebaseService())
+        .environmentObject(BackendService())
         .environmentObject(GoalsService())
         .environmentObject(GoalsAndStreaksService())
-        .environmentObject(RecommendationsEngine())
+        .environmentObject(ThemeManager()) // Inject ThemeManager for preview
         .background(Color.black)
 }
+

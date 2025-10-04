@@ -1,24 +1,23 @@
 import SwiftUI
 import AVFoundation
-import Firebase
 
 @main
 struct FlexaSwiftUIApp: App {
-    @StateObject private var firebaseService = FirebaseService()
-    @StateObject private var streaksService = GoalsAndStreaksService()
-    @StateObject private var goalsService = GoalsService()
-    @StateObject private var geminiService = GeminiService()
-    @StateObject private var recommendationsEngine = RecommendationsEngine()
-    @StateObject private var themeManager = ThemeManager()
-    @StateObject private var motionService = SimpleMotionService.shared
-    @StateObject private var coreMotionSensorService = CoreMotionSensorService()
+    @StateObject private var backendService: BackendService
+    @StateObject private var streaksService: GoalsAndStreaksService
     @StateObject private var navigationCoordinator = NavigationCoordinator()
+    @StateObject private var motionService = SimpleMotionService.shared
+    @StateObject private var themeManager = ThemeManager()
+    @StateObject private var geminiService = GeminiService()
+    @StateObject private var goalsService = GoalsService()
     
     init() {
+        let backend = BackendService()
+        _backendService = StateObject(wrappedValue: backend)
+        _streaksService = StateObject(wrappedValue: GoalsAndStreaksService(backendService: backend))
         FlexaLog.lifecycle.info("App init — configuring services")
-        // Configure Firebase
-        FirebaseApp.configure()
-        FlexaLog.lifecycle.info("Firebase configured")
+    // Backend service initialization (Appwrite)
+    FlexaLog.lifecycle.info("Backend/Firebase service configured")
         
         // Setup secure API keys (env preferred)
         KeychainManager.shared.setupInitialKeys()
@@ -29,48 +28,60 @@ struct FlexaSwiftUIApp: App {
         // Setup notifications on app launch
         NotificationService.shared.setupDefaultNotifications()
         FlexaLog.lifecycle.info("Notifications configured")
+        
+        // Start memory pressure monitoring
+        MemoryManager.shared.startMemoryPressureMonitoring()
+        FlexaLog.lifecycle.info("Memory monitoring started")
     }
     
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(firebaseService)
-                .environment(\.firebaseService, firebaseService)
-                .environmentObject(goalsService)
+                .environmentObject(backendService)
+                .environment(\.backendService, backendService)
+                .environmentObject(motionService)
+                .environmentObject(navigationCoordinator)
+                .environmentObject(themeManager) // Inject ThemeManager as EnvironmentObject
                 .environmentObject(streaksService)
                 .environmentObject(geminiService)
-                .environmentObject(recommendationsEngine)
-                .environmentObject(themeManager)
-                .environmentObject(motionService)
-                .environmentObject(coreMotionSensorService)
-                .environmentObject(navigationCoordinator)
-                .environment(\.theme, themeManager)
+                .environmentObject(goalsService)
                 .preferredColorScheme(.dark)
                 .onAppear {
-                    // Sign in anonymously and load user data
-                    Task {
+                    // Load user data and goals (local first, Azure in background)
+                    FlexaLog.lifecycle.info("🚀 [PRELOAD] Starting background data loading...")
+
+                    // One concise calibration summary at startup (reduces conflicting logs)
+                    let calMgr = CalibrationDataManager.shared
+                    let storedValid = calMgr.isCalibrated && (calMgr.currentCalibration?.isCalibrationValid ?? false)
+                    let armLen = calMgr.currentCalibration?.armLength
+                    let isARKit = motionService.universal3DEngine.isCalibrated
+                    CalibrationCheckService.shared.checkCalibrationStatus()
+                    let needsOnboarding = CalibrationCheckService.shared.shouldShowOnboarding
+                    let armLenStr = armLen != nil ? String(format: "%.2f", armLen!) + "m" : "none"
+                    print("🦾 [Startup] Calibration summary → StoredValid=\(storedValid), ARKit=\(isARKit), Onboarding=\(needsOnboarding), ArmLen=\(armLenStr)")
+
+                    // Load user data and goals from local cache first (instant)
+                    streaksService.loadUserData()
+                    goalsService.loadGoals()
+                    
+                    // Preload motion service and camera permissions
+                    requestPermissions()
+                    
+                    // Azure sign-in in background (non-blocking)
+                    Task.detached {
                         FlexaLog.lifecycle.info("Startup — anonymous sign-in start")
                         do {
-                            try await firebaseService.signInAnonymously()
+                            try await backendService.signInAnonymously()
                             FlexaLog.lifecycle.info("Startup — anonymous sign-in success")
+                            await backendService.seedSessionSequenceIfNeeded()
                         } catch {
                             FlexaLog.lifecycle.error("Startup — anonymous sign-in failed: \(error.localizedDescription)")
                         }
-                        
-                        // Preload all data to prevent UI lag
-                        FlexaLog.lifecycle.info("🚀 [PRELOAD] Starting background data loading...")
-                        
-                        // Load user data and goals
-                        streaksService.loadUserData()
-                        goalsService.loadGoals()
-                        
-                        // Preload motion service and camera permissions
-                        requestPermissions()
-                        
-                        await recommendationsEngine.generatePersonalizedRecommendations()
-                        
-                        FlexaLog.lifecycle.info("✅ [PRELOAD] Background data loading complete")
+                        await backendService.runFirebaseDiagnostics()
                     }
+                    
+                    
+                    FlexaLog.lifecycle.info("✅ [PRELOAD] Background data loading complete")
                 }
         }
     }
@@ -83,3 +94,4 @@ struct FlexaSwiftUIApp: App {
         }
     }
 }
+

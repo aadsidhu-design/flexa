@@ -1,14 +1,14 @@
 import SwiftUI
+import Foundation
 
 struct GamesView: View {
-    @EnvironmentObject var firebaseService: FirebaseService
+    @EnvironmentObject var backendService: BackendService
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var streaksService: GoalsAndStreaksService
-    @EnvironmentObject var recommendationsEngine: RecommendationsEngine
     @EnvironmentObject var navigationCoordinator: NavigationCoordinator
     
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
@@ -33,19 +33,19 @@ struct GamesView: View {
                         .font(.title2)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
-                        .padding(.horizontal)
+                        .padding(Edge.Set.horizontal)
                     
                     LazyVGrid(columns: [
                         GridItem(.flexible()),
                         GridItem(.flexible())
                     ], spacing: 16) {
-                        ForEach(GameType.allCases.filter { $0 != .makeYourOwn }, id: \.self) { game in
+                        ForEach(GameType.allCases, id: \.self) { game in
                             ModernGameCard(game: game) {
                                 navigationCoordinator.showInstructions(for: game)
                             }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(Edge.Set.horizontal)
                 }
                 
                 Spacer(minLength: 100)
@@ -59,9 +59,19 @@ struct GamesView: View {
 struct ModernGameCard: View {
     let game: GameType
     let action: () -> Void
-    
+
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            print("🔍 [ModernGameCard] TAPPED exercise card: '\(game.displayName)' (\(game.rawValue)) - type: \(game.exerciseType)")
+            print("🔍 [ModernGameCard] Game details:")
+            print("  - Description: \(game.description)")
+            print("  - Icon: \(game.icon)")
+            print("  - Color: \(game.color)")
+            print("  - Instruction image: \(game.instructionImageName)")
+            print("  - Action: navigating to \(game.rawValue) instructions")
+
+            action()
+        }) {
             VStack(spacing: 12) {
                 ZStack {
                     Circle()
@@ -108,89 +118,156 @@ struct ModernGameCard: View {
 
 enum GameType: String, CaseIterable, Identifiable {
     case fruitSlicer = "fruit_slicer"
-    case witchBrew = "witch_brew"
+    case followCircle = "follow_circle"
     case fanOutFlame = "fan_out_flame"
     case wallClimbers = "wall_climbers"
     case balloonPop = "balloon_pop"
     case constellationMaker = "constellation_maker"
     case makeYourOwn = "make_your_own"
-    case testROM = "test_rom"
+    
     
     var displayName: String {
         switch self {
-        case .fruitSlicer: return "Fruit Slicer"
-        case .witchBrew: return "Witch Brew"
-        case .fanOutFlame: return "Fan Out the Flame"
-        case .wallClimbers: return "Wall Climbers"
-        case .balloonPop: return "Balloon Pop"
-        case .constellationMaker: return "Create constellations with arm movements"
-        case .makeYourOwn: return "Create your own custom exercise"
-        case .testROM: return "Live angle tracker for ROM testing"
+        case .fruitSlicer: return "Pendulum Swing"
+        case .followCircle: return "Pendulum Circles"
+        case .fanOutFlame: return "Scapular Retractions"
+        case .wallClimbers: return "Wall Climb"
+        case .balloonPop: return "Elbow Extension"
+        case .constellationMaker: return "Arm Raises"
+        case .makeYourOwn: return "Make Your Own"
+        
+        }
+    }
+
+    var legacyNames: [String] {
+        switch self {
+        case .fruitSlicer: return ["Fruit Slicer"]
+        case .followCircle: return ["Follow the Circle", "Witch Brew"]
+        case .fanOutFlame: return ["Fan Out the Flame", "Flap Wings"]
+        case .wallClimbers: return ["Wall Climbers", "Mountain Climbers"]
+        case .balloonPop: return ["Balloon Pop"]
+        case .constellationMaker: return ["Constellations", "Constellation"]
+        case .makeYourOwn: return ["Make Your Own"]
         }
     }
     
     var description: String {
         switch self {
-        case .fruitSlicer: return "Slice fruits with arm movements"
-        case .witchBrew: return "Stir witch brew with circular motions"
-        case .fanOutFlame: return "Fan left and right to extinguish flames"
-        case .wallClimbers: return "Climb virtual walls with wrist tracking"
-        case .balloonPop: return "Pop balloons with elbow extensions"
-        case .constellationMaker: return "Connect stars in correct sequence"
-        case .makeYourOwn: return "Test ROM calculation with live angle tracking"
-        case .testROM: return "Live angle tracker for ROM testing"
+        case .fruitSlicer: return "Hold phone flat and swing arm forward/back like a pendulum to slice fruit"
+        case .followCircle: return "Hold phone and move arm in circles - cursor follows your hand movement"
+        case .fanOutFlame: return "Hold phone and swing arm side-to-side to fan out the flame"
+        case .wallClimbers: return "Prop phone to see yourself - raise and lower arms to climb higher"
+        case .balloonPop: return "Prop phone to see yourself - raise arms overhead to pop balloons"
+        case .constellationMaker: return "Prop phone to see yourself - connect constellation dots with your hand"
+        case .makeYourOwn: return "Create custom exercises with your preferred duration and tracking mode"
+        
         }
     }
     
     var icon: String {
         switch self {
         case .fruitSlicer: return "scissors"
-        case .witchBrew: return "flask"
+        case .followCircle: return "circle.dotted"
         case .fanOutFlame: return "flame"
         case .wallClimbers: return "mountain.2"
         case .balloonPop: return "balloon.2"
         case .constellationMaker: return "star.fill"
-        case .makeYourOwn: return "ruler"
-        case .testROM: return "angle"
+        case .makeYourOwn: return "gearshape.fill"
+        
         }
     }
     
     var color: Color {
         switch self {
         case .fruitSlicer: return .orange
-        case .witchBrew: return .purple
+        case .followCircle: return .blue
         case .fanOutFlame: return .red
         case .wallClimbers: return .brown
         case .balloonPop: return .pink
         case .constellationMaker: return .cyan
-        case .makeYourOwn: return .green
-        case .testROM: return .cyan
+        case .makeYourOwn: return .blue
+        
         }
     }
     
     var exerciseType: String {
         switch self {
         case .fruitSlicer: return "Handheld"
-        case .witchBrew: return "Handheld"
+        case .followCircle: return "Handheld"
         case .fanOutFlame: return "Handheld"
         case .wallClimbers: return "Camera"
         case .balloonPop: return "Camera"
         case .constellationMaker: return "Camera"
-        case .makeYourOwn: return "Test"
-        case .testROM: return "Camera"
+        case .makeYourOwn: return "Both"
+        
         }
     }
     
     var instructionImageName: String {
         switch self {
         case .fruitSlicer: return "instr_fruit_slicer"
-        case .witchBrew: return "instr_witch_brew"
-        case .fanOutFlame: return "trapezius-strengthening (2)"
-        case .wallClimbers: return "acp2794_368x240"  // or acp2792_368x240
-        case .balloonPop: return "elbow-extension (1)"
-        case .constellationMaker: return "instr_constellation"  // No image provided
-        case .makeYourOwn: return "instr_custom"
-        case .testROM: return "elbow-extension (1)"
+        case .followCircle: return "instr_witch_brew"
+        case .fanOutFlame: return "instr_flap_wings"  // Uses trapezius-strengthening image
+        case .wallClimbers: return "instr_wall_climbers"
+        case .balloonPop: return "instr_balloon_pop"
+        case .constellationMaker: return "instr_constellation"  // No image - will show placeholder
+        case .makeYourOwn: return "instr_make_your_own"  // No image - will show placeholder
+        
+        }
+    }
+
+    var instructionVideoResourceName: String {
+        switch self {
+        case .fruitSlicer: return "pendulum_swing"
+        case .followCircle: return "pendulum_circles"
+        case .fanOutFlame: return "scapular_retractions"
+        case .wallClimbers: return "wall_climb"
+        case .balloonPop: return "elbow_extension"
+        case .constellationMaker: return "arm_raises"
+        case .makeYourOwn: return "make_your_own"
+        }
+    }
+
+    var instructionVideoURL: URL? {
+        Bundle.main.url(forResource: instructionVideoResourceName, withExtension: "mp4")
+    }
+
+    func matchesDisplayName(_ name: String) -> Bool {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == displayName.lowercased() { return true }
+        return legacyNames.map { $0.lowercased() }.contains(normalized)
+    }
+
+    var allDisplayNames: [String] {
+        [displayName] + legacyNames
+    }
+
+    static func fromDisplayName(_ name: String) -> GameType? {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return GameType.allCases.first { type in
+            type.matchesDisplayName(normalized)
+                || type.rawValue == normalized
+                || type.rawValue.replacingOccurrences(of: "_", with: " ") == normalized
+                || type.legacyNames.map { $0.lowercased().replacingOccurrences(of: "_", with: " ") }.contains(normalized)
+        }
+    }
+
+    var aiDescription: String {
+        switch self {
+        case .fruitSlicer:
+            return "A handheld pendulum swing exercise using gentle forward and backward arm motions to slice virtual fruit. Emphasizes rhythmic pendulum swings and smooth pacing."
+        case .followCircle:
+            return "A handheld pendulum-circle drill where patients trace circular paths in the air. Focuses on smooth, continuous circular motion and control."
+        case .fanOutFlame:
+            return "A handheld scapular retraction exercise where patients sweep side-to-side to fan out a flame. Encourages even scapular engagement and rhythmic tempo."
+        case .wallClimbers:
+            return "A camera-based wall climb reaching drill that guides the arms overhead in alternating patterns. Builds shoulder elevation endurance and coordination."
+        case .balloonPop:
+            return "A camera-based elbow extension reaching task where patients pop balloons overhead. Reinforces full elbow extension and controlled lowering."
+        case .constellationMaker:
+            return "A camera-based arm raise sequence guiding patients to multiple targets. Promotes multi-directional shoulder raises and sustained control."
+        case .makeYourOwn:
+            return "A customizable exercise mode where patients configure their own motion tracking routines and durations."
         }
     }
     

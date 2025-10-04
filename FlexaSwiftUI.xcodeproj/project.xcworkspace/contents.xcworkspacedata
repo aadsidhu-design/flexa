@@ -4,4 +4,10 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:SessionFile.swift">
+   </FileRef>
+   <FileRef
+      location = "group:LocalDataManager.swift">
+   </FileRef>
 </Workspace>

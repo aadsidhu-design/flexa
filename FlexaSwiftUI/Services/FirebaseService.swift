@@ -1,455 +1,602 @@
 import Foundation
-import Firebase
-import FirebaseFirestore
-import FirebaseAuth
-import Combine
 
-class FirebaseService: ObservableObject {
-    @Published var isAuthenticated = false
-    @Published var currentUser: User?
-    
-    private let db = Firestore.firestore()
-    private let auth = Auth.auth()
-    
-    init() {
-        setupAuthStateListener()
-        FlexaLog.firebase.info("FirebaseService initialized")
+
+final class FirebaseService: ObservableObject {
+    struct FirebaseUser {
+        let uid: String
     }
 
-    // MARK: - SessionFile JSON Upload
-    func uploadSessionFile(_ file: SessionFile) async throws {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        let dict = file.toDictionary()
-        FlexaLog.firebase.info("Upload SessionFile JSON — uid=\(FlexaLog.mask(userId)) type=\(file.exerciseType) reps=\(file.reps) roms=\(file.romPerRep.count) sparc=\(file.sparcHistory.count)")
-        do {
-            _ = try await db.collection("users").document(userId).collection("sessions_json").addDocument(data: dict)
-            FlexaLog.firebase.info("Upload SessionFile JSON success")
-        } catch {
-            FlexaLog.firebase.error("Upload SessionFile JSON failed: \(error.localizedDescription)")
-            throw error
-        }
+    struct FirestoreDocument {
+        let name: String
+        let fields: [String: Any]
+        let createTime: Date?
+        let updateTime: Date?
     }
-    
-    // Count all session documents for current user
-    func fetchSessionCount() async throws -> Int {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        let snapshot = try await db.collection("users").document(userId).collection("sessions").getDocuments()
-        return snapshot.documents.count
-    }
-    
-    private func setupAuthStateListener() {
-        auth.addStateDidChangeListener { [weak self] _, user in
-            DispatchQueue.main.async {
-                self?.isAuthenticated = user != nil
-                self?.currentUser = user
-                if let u = user {
-                    FlexaLog.firebase.info("Auth state: signed in uid=\(FlexaLog.mask(u.uid))")
-                } else {
-                    FlexaLog.firebase.info("Auth state: signed out")
-                }
-            }
-        }
-    }
-    
-    func signInAnonymously() async throws {
-        FlexaLog.firebase.info("Anonymous sign-in start")
-        do {
-            let result = try await auth.signInAnonymously()
-            FlexaLog.firebase.info("Anonymous sign-in success uid=\(FlexaLog.mask(result.user.uid))")
-        } catch {
-            FlexaLog.firebase.error("Anonymous sign-in failed: \(error.localizedDescription)")
-            throw error
-        }
-    }
-    
-    func saveExerciseSession(_ session: ExerciseSessionData) async throws {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        FlexaLog.firebase.info("Save session start — uid=\(FlexaLog.mask(userId)) game=\(session.exerciseType) reps=\(session.reps) maxROM=\(Int(session.maxROM))")
-        var sessionData: [String: Any] = [
-            "gameType": session.exerciseType,
-            "score": session.score,
-            "reps": session.reps,
-            "maxROM": session.maxROM,
-            "duration": session.duration,
-            "timestamp": Timestamp(date: session.timestamp),
-            "romData": session.romData.map { ["angle": $0.angle, "timestamp": Timestamp(date: $0.timestamp)] },
-            "romHistory": session.romHistory,
-            "sparcHistory": session.sparcHistory
-        ]
-        if let ai = session.aiScore { sessionData["aiScore"] = ai }
-        if let pre = session.painPre { sessionData["painPre"] = pre }
-        if let post = session.painPost { sessionData["painPost"] = post }
-        // Do NOT send accel/gyro fields; they are stored locally only.
-        
-        do {
-            _ = try await db.collection("users").document(userId).collection("sessions").addDocument(data: sessionData)
-            FlexaLog.firebase.info("Save session success")
-        } catch {
-            FlexaLog.firebase.error("Save session failed: \(error.localizedDescription)")
-            throw error
-        }
-    }
-    
-    func saveComprehensiveSession(_ session: ComprehensiveSessionData) async throws {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        FlexaLog.firebase.info("Save comprehensive session start — uid=\(FlexaLog.mask(userId)) name=\(session.exerciseName) reps=\(session.totalReps) dur=\(Int(session.duration))")
-        let sessionDict = session.toDictionary()
-        do {
-            _ = try await db.collection("users").document(userId).collection("sessions").addDocument(data: sessionDict)
-            FlexaLog.firebase.info("Save comprehensive session success")
-        } catch {
-            FlexaLog.firebase.error("Save comprehensive session failed: \(error.localizedDescription)")
-            throw error
-        }
-    }
-    
-    func fetchExerciseSessions() async throws -> [ExerciseSessionData] {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        FlexaLog.firebase.info("Fetch sessions start — uid=\(FlexaLog.mask(userId)) limit=50")
-        // Attempt ordered query; if Firestore has mixed types for 'timestamp', fall back to unordered fetch.
-        var snapshot: QuerySnapshot
-        do {
-            snapshot = try await db.collection("users").document(userId).collection("sessions")
-                .order(by: "timestamp", descending: true)
-                .limit(to: 50)
-                .getDocuments()
-        } catch {
-            FlexaLog.firebase.error("Ordered fetch failed, falling back to unordered: \(error.localizedDescription)")
-            snapshot = try await db.collection("users").document(userId).collection("sessions")
-                .limit(to: 50)
-                .getDocuments()
-        }
-        FlexaLog.firebase.info("Fetch sessions success — count=\(snapshot.documents.count)")
-        let iso = ISO8601DateFormatter()
-        
-        func anyToDouble(_ any: Any?) -> Double? {
-            if let d = any as? Double { return d }
-            if let i = any as? Int { return Double(i) }
-            if let s = any as? String, let d = Double(s) { return d }
-            return nil
-        }
-        func anyToInt(_ any: Any?) -> Int? {
-            if let i = any as? Int { return i }
-            if let d = any as? Double { return Int(d) }
-            if let s = any as? String, let i = Int(s) { return i }
-            return nil
-        }
-        func parseDate(_ any: Any?) -> Date {
-            if let ts = any as? Timestamp { return ts.dateValue() }
-            if let s = any as? String, let d = iso.date(from: s) { return d }
-            return Date()
-        }
-        
-        let sessions: [ExerciseSessionData] = snapshot.documents.compactMap { doc in
-            let data = doc.data()
-            // Determine document shape: basic (gameType) or comprehensive (exerciseName)
-            if let exerciseName = data["exerciseName"] as? String {
-                // ComprehensiveSessionData shape
-                let score = anyToInt(data["totalScore"]) ?? 0
-                let reps = anyToInt(data["totalReps"]) ?? 0
-                let maxROM = anyToDouble(data["maxROM"]) ?? 0
-                let duration = anyToDouble(data["duration"]) ?? 0
-                let timestamp = parseDate(data["timestamp"]) // ISO8601 string in comprehensive docs
-                
-                // ROM points derived from romPerRep + repTimestamps if available
-                let romPerRep = data["romPerRep"] as? [Any] ?? []
-                let repTsRaw = data["repTimestamps"] as? [Any] ?? []
-                var repDates: [Date] = repTsRaw.map { parseDate($0) }
-                if repDates.count != romPerRep.count {
-                    // Fallback: synthesize timestamps spaced by 1s starting at session timestamp
-                    repDates = (0..<romPerRep.count).map { i in timestamp.addingTimeInterval(Double(i)) }
-                }
-                let romPoints: [ROMPoint] = zip(romPerRep, repDates).compactMap { anyValue, date in
-                    guard let v = anyToDouble(anyValue) else { return nil }
-                    return ROMPoint(angle: v, timestamp: date)
-                }
-                
-                // SPARC average from sparcDataOverTime if present
-                var sparcAvg: Double? = nil
-                if let sparcArray = data["sparcDataOverTime"] as? [[String: Any]] {
-                    let values: [Double] = sparcArray.compactMap { anyToDouble($0["sparcValue"]) }
-                    if !values.isEmpty { sparcAvg = values.reduce(0, +) / Double(values.count) }
-                }
-                
-                // Pain levels from nested survey data
-                var painPre: Int? = nil
-                var painPost: Int? = nil
-                if let pre = data["preSurveyData"] as? [String: Any] {
-                    painPre = anyToInt(pre["painLevel"]) ?? painPre
-                }
-                if let post = data["postSurveyData"] as? [String: Any] {
-                    painPost = anyToInt(post["painLevel"]) ?? painPost
-                }
-                
-                let aiScore = anyToInt(data["aiScore"]) // May exist on comprehensive docs
-                let accelAvg = anyToDouble(data["accelAvgMagnitude"]) 
-                let accelPeak = anyToDouble(data["accelPeakMagnitude"]) 
-                let gyroAvg = anyToDouble(data["gyroAvgMagnitude"]) 
-                let gyroPeak = anyToDouble(data["gyroPeakMagnitude"]) 
-                
-                return ExerciseSessionData(
-                    id: doc.documentID,
-                    exerciseType: exerciseName,
-                    score: score,
-                    reps: reps,
-                    maxROM: maxROM,
-                    duration: duration,
-                    timestamp: timestamp,
-                    romHistory: romPerRep.compactMap { anyToDouble($0) },
-                    sparcHistory: [],
-                    romData: romPoints,
-                    sparcData: [],
-                    aiScore: aiScore,
-                    painPre: painPre,
-                    painPost: painPost,
-                    sparcScore: sparcAvg ?? 0.0,
-                    accelAvgMagnitude: accelAvg,
-                    accelPeakMagnitude: accelPeak,
-                    gyroAvgMagnitude: gyroAvg,
-                    gyroPeakMagnitude: gyroPeak
-                )
-            } else if let gameType = data["gameType"] as? String {
-                // Basic shape saved by saveExerciseSession
-                let score = anyToInt(data["score"]) ?? 0
-                let reps = anyToInt(data["reps"]) ?? 0
-                let maxROM = anyToDouble(data["maxROM"]) ?? 0
-                let duration = anyToDouble(data["duration"]) ?? 0
-                let timestamp = (data["timestamp"] as? Timestamp)?.dateValue() ?? Date()
-                let romHistory = (data["romHistory"] as? [Any] ?? []).compactMap { anyToDouble($0) }
-                let sparcHistory = (data["sparcHistory"] as? [Any] ?? []).compactMap { anyToDouble($0) }
-                // Legacy romData
-                var romPoints: [ROMPoint] = []
-                if let rawRomData = data["romData"] as? [[String: Any]] {
-                    romPoints = rawRomData.compactMap { d in
-                        guard let angle = anyToDouble(d["angle"]) else { return nil }
-                        let ts = (d["timestamp"] as? Timestamp)?.dateValue() ?? timestamp
-                        return ROMPoint(angle: angle, timestamp: ts)
-                    }
-                }
-                let aiScore = anyToInt(data["aiScore"]) 
-                let painPre = anyToInt(data["painPre"]) 
-                let painPost = anyToInt(data["painPost"]) 
-                let accelAvg = anyToDouble(data["accelAvgMagnitude"]) 
-                let accelPeak = anyToDouble(data["accelPeakMagnitude"]) 
-                let gyroAvg = anyToDouble(data["gyroAvgMagnitude"]) 
-                let gyroPeak = anyToDouble(data["gyroPeakMagnitude"]) 
-                return ExerciseSessionData(
-                    id: doc.documentID,
-                    exerciseType: gameType,
-                    score: score,
-                    reps: reps,
-                    maxROM: maxROM,
-                    duration: duration,
-                    timestamp: timestamp,
-                    romHistory: romHistory,
-                    sparcHistory: sparcHistory,
-                    romData: romPoints,
-                    sparcData: [],
-                    aiScore: aiScore,
-                    painPre: painPre,
-                    painPost: painPost,
-                    sparcScore: 0.0,
-                    accelAvgMagnitude: accelAvg,
-                    accelPeakMagnitude: accelPeak,
-                    gyroAvgMagnitude: gyroAvg,
-                    gyroPeakMagnitude: gyroPeak
-                )
+
+    @Published private(set) var isAuthenticated = false
+    @Published private(set) var currentUser: FirebaseUser?
+
+    private let session: URLSession
+    private let apiKey: String
+    private let projectId: String
+    private let firestoreBaseURL: URL?
+    private let identityBaseURL = URL(string: "https://identitytoolkit.googleapis.com/v1")!
+    private let secureTokenURL = URL(string: "https://securetoken.googleapis.com/v1/token")!
+    private let refreshTokenKey = "FIREBASE_REFRESH_TOKEN"
+
+    private var idToken: String?
+    private var tokenExpiry: Date?
+    private var refreshToken: String? {
+        didSet {
+            if let token = refreshToken {
+                _ = KeychainManager.shared.store(token, for: refreshTokenKey)
             } else {
-                return nil
+                _ = KeychainManager.shared.delete(for: refreshTokenKey)
             }
         }
-        
-        // Sort client-side by timestamp ascending for consistent graphing
-        FlexaLog.firebase.debug("Parsed sessions count=\(sessions.count)")
-        return sessions.sorted(by: { $0.timestamp < $1.timestamp })
     }
-    
-    func saveUserGoals(_ goals: UserGoals) async throws {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        FlexaLog.firebase.info("Save user goals start — uid=\(FlexaLog.mask(userId)) daily=\(goals.dailyReps) weekly=\(goals.weeklyMinutes) targetROM=\(Int(goals.targetROM))")
-        let goalsData: [String: Any] = [
-            "dailyReps": goals.dailyReps,
-            "weeklyMinutes": goals.weeklyMinutes,
-            "targetROM": goals.targetROM,
-            "preferredGames": goals.preferredGames,
-            "lastUpdated": Timestamp(date: Date())
-        ]
-        
-        do {
-            try await db.collection("users").document(userId).setData(["goals": goalsData], merge: true)
-            FlexaLog.firebase.info("Save user goals success")
-        } catch {
-            FlexaLog.firebase.error("Save user goals failed: \(error.localizedDescription)")
-            throw error
+
+    // Cache session payloads so repeated writes send full data.
+    private var sessionDocumentCache: [String: [String: Any]] = [:]
+    private let cacheQueue = DispatchQueue(label: "com.flexa.firebaseSessionCache")
+
+    init(session: URLSession = .shared) {
+        self.session = session
+        self.apiKey = SecureConfig.shared.firebaseAPIKey
+        self.projectId = SecureConfig.shared.firebaseProjectId
+        if !projectId.isEmpty {
+            self.firestoreBaseURL = URL(string: "https://firestore.googleapis.com/v1/projects/\(projectId)/databases/(default)/documents")
+        } else {
+            self.firestoreBaseURL = nil
+        }
+
+        if let storedRefresh = KeychainManager.shared.getString(for: refreshTokenKey) {
+            self.refreshToken = storedRefresh
         }
     }
-    
-    func fetchUserGoals() async throws -> UserGoals? {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        FlexaLog.firebase.info("Fetch user goals start — uid=\(FlexaLog.mask(userId))")
-        let doc = try await db.collection("users").document(userId).getDocument()
-        guard let data = doc.data(),
-              let goalsData = data["goals"] as? [String: Any] else { return nil }
-        FlexaLog.firebase.info("Fetch user goals success")
-        return UserGoals(
-            dailyReps: goalsData["dailyReps"] as? Int ?? 50,
-            weeklyMinutes: goalsData["weeklyMinutes"] as? Int ?? 150,
-            targetROM: goalsData["targetROM"] as? Double ?? 90,
-            preferredGames: goalsData["preferredGames"] as? [String] ?? []
+
+    // MARK: - Authentication
+
+    func signInAnonymously(existingUserId: String?) async throws -> FirebaseUser {
+        if let user = currentUser, tokenIsValid() {
+            return user
+        }
+
+        if let refreshToken = refreshToken {
+            do {
+                let refreshedUser = try await refreshIdToken(refreshToken: refreshToken)
+                await updateAuthState(user: refreshedUser)
+                return refreshedUser
+            } catch {
+                FlexaLog.backend.error("Firebase refresh token failed: \(error.localizedDescription)")
+                self.refreshToken = nil
+            }
+        }
+
+        let url = identityBaseURL.appendingPathComponent("accounts:signUp")
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw FirebaseServiceError.invalidConfiguration
+        }
+        components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        guard let finalURL = components.url else { throw FirebaseServiceError.invalidConfiguration }
+
+        var request = URLRequest(url: finalURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload: [String: Any] = [
+            "returnSecureToken": true
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data, context: "signInAnonymously")
+
+    let signUp = try JSONDecoder().decode(SignUpResponse.self, from: data)
+    self.idToken = signUp.idToken
+    self.refreshToken = signUp.refreshToken
+    let expiresSeconds = Double(signUp.expiresIn ?? "3600") ?? 3600
+    self.tokenExpiry = Date().addingTimeInterval(expiresSeconds - 60)
+        let user = FirebaseUser(uid: signUp.localId)
+    await updateAuthState(user: user)
+        return user
+    }
+
+    private func refreshIdToken(refreshToken: String) async throws -> FirebaseUser {
+        guard var components = URLComponents(url: secureTokenURL, resolvingAgainstBaseURL: false) else {
+            throw FirebaseServiceError.invalidConfiguration
+        }
+        components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        guard let url = components.url else { throw FirebaseServiceError.invalidConfiguration }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let bodyString = "grant_type=refresh_token&refresh_token=\(refreshToken)"
+        request.httpBody = bodyString.data(using: .utf8)
+
+        let (data, response) = try await session.data(for: request)
+        try validate(response: response, data: data, context: "refreshIdToken")
+
+    let refresh = try JSONDecoder().decode(RefreshResponse.self, from: data)
+    self.idToken = refresh.idToken
+    self.refreshToken = refresh.refreshToken
+    let expires = Double(refresh.expiresIn ?? "3600") ?? 3600
+    self.tokenExpiry = Date().addingTimeInterval(expires - 60)
+        let user = FirebaseUser(uid: refresh.userId)
+        await updateAuthState(user: user)
+        return user
+    }
+
+    private func ensureAuthenticated() async throws {
+        if tokenIsValid() { return }
+        if let refreshToken = refreshToken {
+            _ = try await refreshIdToken(refreshToken: refreshToken)
+            return
+        }
+    _ = try await signInAnonymously(existingUserId: currentUser?.uid)
+    }
+
+    private func tokenIsValid() -> Bool {
+        if let token = idToken, !token.isEmpty,
+           let expiry = tokenExpiry, expiry > Date() {
+            return true
+        }
+        return false
+    }
+
+    @MainActor
+    private func updateAuthState(user: FirebaseUser) {
+        self.currentUser = user
+        self.isAuthenticated = true
+    }
+
+    // MARK: - Diagnostics
+
+    func runDiagnostics(existingUserId: String?) async -> FirebaseHealthDiagnostics {
+        let hasAPIKey = !apiKey.isEmpty
+        let hasProjectId = !projectId.isEmpty
+
+        var authStatus: FirebaseHealthDiagnostics.StageStatus = .notRun
+        var firestoreStatus: FirebaseHealthDiagnostics.StageStatus = .notRun
+
+        guard hasAPIKey && hasProjectId else {
+            return FirebaseHealthDiagnostics(
+                hasAPIKey: hasAPIKey,
+                hasProjectId: hasProjectId,
+                authStatus: authStatus,
+                firestoreStatus: firestoreStatus,
+                checkedAt: Date()
+            )
+        }
+
+        do {
+            let user = try await signInAnonymously(existingUserId: existingUserId)
+            authStatus = .success(details: "uid=\(FlexaLog.mask(user.uid))")
+            do {
+                let reachable = try await performDiagnosticsPing(userId: user.uid)
+                firestoreStatus = reachable ? .success(details: "users/\(user.uid)") : .failure(message: "Ping returned false")
+            } catch {
+                firestoreStatus = .failure(message: error.localizedDescription)
+            }
+        } catch {
+            authStatus = .failure(message: error.localizedDescription)
+        }
+
+        return FirebaseHealthDiagnostics(
+            hasAPIKey: hasAPIKey,
+            hasProjectId: hasProjectId,
+            authStatus: authStatus,
+            firestoreStatus: firestoreStatus,
+            checkedAt: Date()
         )
     }
-    
-    func updateStreak(_ streak: StreakData) async throws {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        FlexaLog.firebase.info("Update streak start — uid=\(FlexaLog.mask(userId)) current=\(streak.currentStreak) longest=\(streak.longestStreak)")
-        let streakData: [String: Any] = [
-            "currentStreak": streak.currentStreak,
-            "longestStreak": streak.longestStreak,
-            "lastExerciseDate": Timestamp(date: streak.lastExerciseDate),
-            "totalDays": streak.totalDays
+
+    // MARK: - Public APIs
+
+    func saveSession(userId: String, sessionId: String, sessionData: [String: Any]) async throws {
+        try await ensureAuthenticated()
+        let key = cacheKey(userId: userId, sessionId: sessionId)
+        let merged = cacheQueue.sync { () -> [String: Any] in
+            var existing = sessionDocumentCache[key] ?? [:]
+            sessionData.forEach { existing[$0.key] = $0.value }
+            let sanitized = FirebasePayloadSanitizer.sanitizeDictionary(existing)
+            sessionDocumentCache[key] = sanitized
+            return sanitized
+        }
+        try await upsertDocument(path: "users/\(userId)/sessions/\(sessionId)", fields: merged)
+    }
+
+    func saveUserGoals(userId: String, goals: UserGoals) async throws {
+        try await ensureAuthenticated()
+        let path = "users/\(userId)"
+        guard var goalFields = encodeEncodable(goals) else {
+            throw FirebaseServiceError.serializationFailed
+        }
+        goalFields["updatedAt"] = Date()
+        let payload: [String: Any] = [
+            "goals": goalFields
         ]
-        
-        do {
-            try await db.collection("users").document(userId).setData(["streak": streakData], merge: true)
-            FlexaLog.firebase.info("Update streak success")
-        } catch {
-            FlexaLog.firebase.error("Update streak failed: \(error.localizedDescription)")
-            throw error
+        try await upsertDocument(path: path, fields: payload)
+    }
+
+    func updateStreak(userId: String, streak: StreakData) async throws {
+        try await ensureAuthenticated()
+        let path = "users/\(userId)"
+        guard let streakFields = encodeEncodable(streak) else {
+            throw FirebaseServiceError.serializationFailed
+        }
+        let payload: [String: Any] = [
+            "streak": streakFields
+        ]
+        try await upsertDocument(path: path, fields: payload)
+    }
+
+    func updateSessionMetadata(userId: String, latestSessionNumber: Int?) async throws {
+        try await ensureAuthenticated()
+        var fields: [String: Any] = [
+            "lastSessionSync": Date()
+        ]
+        if let latestSessionNumber {
+            fields["latestSessionNumber"] = latestSessionNumber
+        }
+        try await upsertDocument(path: "users/\(userId)", fields: fields)
+    }
+
+    func fetchUserDocument(userId: String) async throws -> FirestoreDocument? {
+        return try await fetchDocument(path: "users/\(userId)", context: "fetchUserDocument")
+    }
+
+    func fetchUserSessions(userId: String, limit: Int = 50) async throws -> [FirestoreDocument] {
+        return try await listDocuments(path: "users/\(userId)/sessions", limit: limit, context: "fetchUserSessions")
+    }
+
+    // MARK: - Firestore Helpers
+
+    private func upsertDocument(path: String, fields: [String: Any]) async throws {
+        guard let baseURL = firestoreBaseURL else { throw FirebaseServiceError.invalidConfiguration }
+        let documentURL = baseURL.appendingPathComponent(path)
+        var createComponents = URLComponents(url: documentURL, resolvingAgainstBaseURL: false)
+        createComponents?.queryItems = [URLQueryItem(name: "currentDocument.exists", value: "false")]
+
+        let sanitizedFields = FirebasePayloadSanitizer.sanitizeDictionary(fields)
+        let body = try firestoreBody(from: sanitizedFields)
+        var request = URLRequest(url: createComponents?.url ?? documentURL)
+        request.httpMethod = "PATCH"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = idToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 409 {
+            var updateComponents = URLComponents(url: documentURL, resolvingAgainstBaseURL: false)
+            var items = sanitizedFields.keys.map { URLQueryItem(name: "updateMask.fieldPaths", value: $0) }
+            items.append(URLQueryItem(name: "currentDocument.exists", value: "true"))
+            updateComponents?.queryItems = items
+            var updateRequest = URLRequest(url: updateComponents?.url ?? documentURL)
+            updateRequest.httpMethod = "PATCH"
+            updateRequest.httpBody = body
+            updateRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let token = idToken {
+                updateRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            let (updateData, updateResponse) = try await session.data(for: updateRequest)
+            try validate(response: updateResponse, data: updateData, context: "upsertDocument-update")
+            return
+        }
+        try validate(response: response, data: data, context: "upsertDocument-create")
+    }
+
+    private func fetchDocument(path: String, context: String) async throws -> FirestoreDocument? {
+        try await ensureAuthenticated()
+    let (request, _) = try makeFirestoreGETRequest(path: path, queryItems: nil)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw FirebaseServiceError.invalidResponse }
+        if http.statusCode == 404 { return nil }
+        try validate(response: response, data: data, context: context)
+        return try decodeDocumentJSON(data: data)
+    }
+
+    private func listDocuments(path: String, limit: Int, context: String) async throws -> [FirestoreDocument] {
+        try await ensureAuthenticated()
+        let queryItems: [URLQueryItem] = [URLQueryItem(name: "pageSize", value: String(limit))]
+        let (request, _) = try makeFirestoreGETRequest(path: path, queryItems: queryItems)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw FirebaseServiceError.invalidResponse }
+        if http.statusCode == 404 { return [] }
+        try validate(response: response, data: data, context: context)
+        return try decodeDocumentsListJSON(data: data)
+    }
+
+    private func firestoreBody(from fields: [String: Any]) throws -> Data {
+        let encodedFields = encodeFields(fields)
+        let payload = ["fields": encodedFields]
+        return try JSONSerialization.data(withJSONObject: payload, options: [])
+    }
+
+    private func encodeFields(_ dictionary: [String: Any]) -> [String: Any] {
+        var result: [String: Any] = [:]
+        for (key, value) in dictionary {
+            if let encoded = encodeValue(value) {
+                result[key] = encoded
+            }
+        }
+        return result
+    }
+
+    private func encodeValue(_ value: Any) -> [String: Any]? {
+        switch value {
+        case let string as String:
+            return ["stringValue": string]
+        case let bool as Bool:
+            return ["booleanValue": bool]
+        case let int as Int:
+            return ["integerValue": String(int)]
+        case let int as Int64:
+            return ["integerValue": String(int)]
+        case let double as Double:
+            guard !double.isNaN, !double.isInfinite else { return nil }
+            return ["doubleValue": double]
+        case let float as Float:
+            return encodeValue(Double(float))
+        case let date as Date:
+            return ["timestampValue": isoFormatter.string(from: date)]
+        case let array as [Any]:
+            let values = array.compactMap { encodeValue($0) }
+            return ["arrayValue": ["values": values]]
+        case let dict as [String: Any]:
+            let encoded = encodeFields(dict)
+            return ["mapValue": ["fields": encoded]]
+        case let data as Data:
+            return ["bytesValue": data.base64EncodedString()]
+        case Optional<Any>.none:
+            return nil
+        case let optional as Optional<Any>:
+            if let value = optional {
+                return encodeValue(value)
+            }
+            return nil
+        default:
+            if let encodable = value as? Encodable {
+                return encodeEncodable(encodable).flatMap { encodeValue($0) }
+            }
+            return nil
         }
     }
-    
-    func fetchStreak() async throws -> StreakData {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        FlexaLog.firebase.info("Fetch streak start — uid=\(FlexaLog.mask(userId))")
-        let doc = try await db.collection("users").document(userId).getDocument()
-        guard let data = doc.data(),
-              let streakData = data["streak"] as? [String: Any] else {
-            FlexaLog.firebase.info("Fetch streak: none found, returning defaults")
-            return StreakData()
+
+    private func encodeEncodable<T: Encodable>(_ value: T) -> [String: Any]? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(Wrapper(value)),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let wrapped = object["value"] as? [String: Any] else {
+            return nil
         }
-        FlexaLog.firebase.info("Fetch streak success")
-        return StreakData(
-            currentStreak: streakData["currentStreak"] as? Int ?? 0,
-            longestStreak: streakData["longestStreak"] as? Int ?? 0,
-            lastExerciseDate: (streakData["lastExerciseDate"] as? Timestamp)?.dateValue() ?? Date.distantPast,
-            totalDays: streakData["totalDays"] as? Int ?? 0
-        )
+        return wrapped
     }
-    
-    func clearAllUserData() async throws {
-        guard let userId = auth.currentUser?.uid else { throw FirebaseError.notAuthenticated }
-        let userRef = db.collection("users").document(userId)
-        
-        // Delete all session documents
-        let sessionsSnapshot = try await userRef.collection("sessions").getDocuments()
-        FlexaLog.firebase.info("Clear user data — deleting \(sessionsSnapshot.documents.count) sessions for uid=\(FlexaLog.mask(userId))")
-        for doc in sessionsSnapshot.documents {
-            try await userRef.collection("sessions").document(doc.documentID).delete()
+
+    private func makeFirestoreGETRequest(path: String, queryItems: [URLQueryItem]?) throws -> (URLRequest, URL) {
+        guard let baseURL = firestoreBaseURL else { throw FirebaseServiceError.invalidConfiguration }
+        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        if let queryItems, !queryItems.isEmpty {
+            components?.queryItems = queryItems
         }
-        
-        // Remove goals and streak fields
-        try await userRef.updateData([
-            "goals": FieldValue.delete(),
-            "streak": FieldValue.delete()
-        ])
-        FlexaLog.firebase.info("Clear user data success")
+        guard let url = components?.url else { throw FirebaseServiceError.invalidConfiguration }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token = idToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return (request, url)
+    }
+
+    private func decodeDocumentJSON(data: Data) throws -> FirestoreDocument? {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return decodeDocument(dict: json)
+    }
+
+    private func decodeDocumentsListJSON(data: Data) throws -> [FirestoreDocument] {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+        let documents = json["documents"] as? [[String: Any]] ?? []
+        return documents.compactMap { decodeDocument(dict: $0) }
+    }
+
+    private func decodeDocument(dict: [String: Any]) -> FirestoreDocument? {
+        let name = dict["name"] as? String ?? ""
+        let createTimeString = dict["createTime"] as? String
+        let updateTimeString = dict["updateTime"] as? String
+        let createTime = createTimeString.flatMap { isoFormatter.date(from: $0) }
+        let updateTime = updateTimeString.flatMap { isoFormatter.date(from: $0) }
+        guard let rawFields = dict["fields"] as? [String: Any] else {
+            return FirestoreDocument(name: name, fields: [:], createTime: createTime, updateTime: updateTime)
+        }
+        let decodedFields = decodeFields(rawFields)
+        return FirestoreDocument(name: name, fields: decodedFields, createTime: createTime, updateTime: updateTime)
+    }
+
+    private func decodeFields(_ fields: [String: Any]) -> [String: Any] {
+        var result: [String: Any] = [:]
+        for (key, rawValue) in fields {
+            guard let map = rawValue as? [String: Any] else { continue }
+            if let decoded = decodeValue(map) {
+                result[key] = decoded
+            }
+        }
+        return result
+    }
+
+    private func decodeValue(_ value: [String: Any]) -> Any? {
+        if let string = value["stringValue"] as? String {
+            return string
+        }
+        if let bool = value["booleanValue"] as? Bool {
+            return bool
+        }
+        if let intNumber = value["integerValue"] as? NSNumber {
+            let int64 = intNumber.int64Value
+            if int64 <= Int64(Int.max) && int64 >= Int64(Int.min) {
+                return Int(int64)
+            }
+            return int64
+        }
+        if let intString = value["integerValue"] as? String, let int64 = Int64(intString) {
+            if int64 <= Int64(Int.max) && int64 >= Int64(Int.min) {
+                return Int(int64)
+            }
+            return int64
+        }
+        if let doubleNumber = value["doubleValue"] as? NSNumber {
+            return doubleNumber.doubleValue
+        }
+        if let double = value["doubleValue"] as? Double {
+            return double
+        }
+        if let doubleString = value["doubleValue"] as? String, let double = Double(doubleString) {
+            return double
+        }
+        if let timestamp = value["timestampValue"] as? String {
+            return isoFormatter.date(from: timestamp)
+        }
+        if let bytes = value["bytesValue"] as? String, let data = Data(base64Encoded: bytes) {
+            return data
+        }
+        if let map = value["mapValue"] as? [String: Any], let nested = map["fields"] as? [String: Any] {
+            return decodeFields(nested)
+        }
+        if let array = value["arrayValue"] as? [String: Any] {
+            let values = array["values"] as? [[String: Any]] ?? []
+            return values.compactMap { decodeValue($0) }
+        }
+        if value["nullValue"] != nil {
+            return nil
+        }
+        if let reference = value["referenceValue"] as? String {
+            return reference
+        }
+        if let geoPoint = value["geoPointValue"] {
+            return geoPoint
+        }
+        return nil
+    }
+
+    private func performDiagnosticsPing(userId: String) async throws -> Bool {
+        try await ensureAuthenticated()
+        let (request, _) = try makeFirestoreGETRequest(path: "users/\(userId)", queryItems: nil)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw FirebaseServiceError.invalidResponse }
+        if http.statusCode == 404 { return true }
+        try validate(response: response, data: data, context: "diagnosticsPing")
+        return true
+    }
+
+    private func validate(response: URLResponse, data: Data, context: String) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw FirebaseServiceError.invalidResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw FirebaseServiceError.apiError(status: http.statusCode, message: message, context: context)
+        }
+    }
+
+    private func cacheKey(userId: String, sessionId: String) -> String {
+        return "\(userId)|\(sessionId)"
+    }
+
+    // MARK: - DTOs & Helpers
+
+    private let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private struct Wrapper<T: Encodable>: Encodable {
+        let value: T
+        init(_ value: T) { self.value = value }
+    }
+
+    private struct SignUpResponse: Decodable {
+        let idToken: String
+        let email: String?
+        let refreshToken: String
+        let expiresIn: String?
+        let localId: String
+    }
+
+    private struct RefreshResponse: Decodable {
+        let accessToken: String
+        let expiresIn: String?
+        let tokenType: String?
+        let refreshToken: String
+        let idToken: String
+        let userId: String
+        let projectId: String?
     }
 }
 
-enum FirebaseError: Error {
-    case notAuthenticated
-    case invalidData
+enum FirebaseServiceError: Error {
+    case invalidConfiguration
+    case apiError(status: Int, message: String, context: String)
+    case serializationFailed
+    case invalidResponse
 }
 
-struct ExerciseSessionData: Identifiable, Codable {
-    let id: String
-    let exerciseType: String // Renamed from gameType for clarity
-    let score: Int
-    let reps: Int
-    let maxROM: Double
-    let averageROM: Double // Average ROM across all reps
-    let duration: TimeInterval
-    let timestamp: Date
-    let romHistory: [Double] // ROM per individual rep
-    var sparcHistory: [Double] // SPARC per individual rep
-    let romData: [ROMPoint] // For backwards compatibility
-    let sparcData: [SPARCPoint] // For backwards compatibility
-    let aiScore: Int?
-    let painPre: Int?
-    let painPost: Int?
-    var sparcScore: Double // Overall SPARC score
-    let formScore: Double
-    let consistency: Double
-    let peakVelocity: Double
-    let motionSmoothnessScore: Double
-    // Optional sensor aggregates
-    let accelAvgMagnitude: Double?
-    let accelPeakMagnitude: Double?
-    let gyroAvgMagnitude: Double?
-    let gyroPeakMagnitude: Double?
+struct FirebaseHealthDiagnostics {
+    enum StageStatus {
+        case notRun
+        case success(details: String? = nil)
+        case failure(message: String)
 
-    init(id: String = UUID().uuidString, exerciseType: String, score: Int, reps: Int, maxROM: Double, averageROM: Double = 0, duration: TimeInterval, timestamp: Date = Date(), romHistory: [Double] = [], sparcHistory: [Double] = [], romData: [ROMPoint] = [], sparcData: [SPARCPoint] = [], aiScore: Int? = nil, painPre: Int? = nil, painPost: Int? = nil, sparcScore: Double = 0, formScore: Double = 0, consistency: Double = 0, peakVelocity: Double = 0, motionSmoothnessScore: Double = 0, accelAvgMagnitude: Double? = nil, accelPeakMagnitude: Double? = nil, gyroAvgMagnitude: Double? = nil, gyroPeakMagnitude: Double? = nil) {
-        self.id = id
-        self.exerciseType = exerciseType
-        self.score = score
-        self.reps = reps
-        self.maxROM = maxROM
-        self.averageROM = averageROM
-        self.duration = duration
-        self.timestamp = timestamp
-        self.romHistory = romHistory
-        self.sparcHistory = sparcHistory
-        self.romData = romData
-        self.sparcData = sparcData
-        self.aiScore = aiScore
-        self.painPre = painPre
-        self.painPost = painPost
-        self.sparcScore = sparcScore
-        self.formScore = formScore
-        self.consistency = consistency
-        self.peakVelocity = peakVelocity
-        self.motionSmoothnessScore = motionSmoothnessScore
-        self.accelAvgMagnitude = accelAvgMagnitude
-        self.accelPeakMagnitude = accelPeakMagnitude
-        self.gyroAvgMagnitude = gyroAvgMagnitude
-        self.gyroPeakMagnitude = gyroPeakMagnitude
+        var isSuccess: Bool {
+            switch self {
+            case .success:
+                return true
+            default:
+                return false
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .notRun:
+                return "not-run"
+            case .success(let details):
+                if let details, !details.isEmpty {
+                    return "success (\(details))"
+                }
+                return "success"
+            case .failure(let message):
+                return "failed — \(message)"
+            }
+        }
     }
-}
 
-struct ROMPoint: Codable {
-    let angle: Double
-    let timestamp: Date
-}
+    let hasAPIKey: Bool
+    let hasProjectId: Bool
+    let authStatus: StageStatus
+    let firestoreStatus: StageStatus
+    let checkedAt: Date
 
-struct SPARCPoint: Codable {
-    let sparc: Double
-    let timestamp: Date
-}
-
-struct UserGoals: Codable {
-    let dailyReps: Int
-    let weeklyMinutes: Int
-    let targetROM: Double
-    let preferredGames: [String]
-    
-    init(dailyReps: Int = 50, weeklyMinutes: Int = 150, targetROM: Double = 90, preferredGames: [String] = []) {
-        self.dailyReps = dailyReps
-        self.weeklyMinutes = weeklyMinutes
-        self.targetROM = targetROM
-        self.preferredGames = preferredGames
+    var configurationIssues: [String] {
+        var issues: [String] = []
+        if !hasAPIKey { issues.append("Firebase API key missing") }
+        if !hasProjectId { issues.append("Firebase Project ID missing") }
+        return issues
     }
-}
 
-struct StreakData: Codable {
-    let currentStreak: Int
-    let longestStreak: Int
-    let lastExerciseDate: Date
-    let totalDays: Int
-    
-    init(currentStreak: Int = 0, longestStreak: Int = 0, lastExerciseDate: Date = Date.distantPast, totalDays: Int = 0) {
-        self.currentStreak = currentStreak
-        self.longestStreak = longestStreak
-        self.lastExerciseDate = lastExerciseDate
-        self.totalDays = totalDays
+    var isHealthy: Bool {
+        return hasAPIKey && hasProjectId && authStatus.isSuccess && firestoreStatus.isSuccess
+    }
+
+    var logSummary: String {
+        let config = configurationIssues.isEmpty ? "configuration OK" : "configuration issues: \(configurationIssues.joined(separator: ", "))"
+        return "\(config); auth=\(authStatus.description); firestore=\(firestoreStatus.description)"
     }
 }

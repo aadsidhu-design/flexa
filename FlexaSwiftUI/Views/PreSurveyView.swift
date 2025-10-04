@@ -7,10 +7,10 @@ struct PreSurveyView: View {
     
     @State private var currentQuestion = 0
     @State private var canProceed = false
+    @State private var hasInteractedWithCurrentQuestion = false
     
     private let questions = [
         "How are you feeling today? (1 = Very Poor, 10 = Excellent)",
-        "What is your current pain level? (1 = No Pain, 10 = Severe Pain)",
         "How motivated are you for this exercise? (1 = Not Motivated, 10 = Very Motivated)"
     ]
     
@@ -61,6 +61,10 @@ struct PreSurveyView: View {
                         onRatingChanged: { rating in
                             updateCurrentAnswer(rating)
                             checkCanProceed()
+                        },
+                        onInteractionChanged: { hasInteracted in
+                            hasInteractedWithCurrentQuestion = hasInteracted
+                            checkCanProceed()
                         }
                     )
                 }
@@ -80,6 +84,7 @@ struct PreSurveyView: View {
                         Button("Back") {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 currentQuestion -= 1
+                                hasInteractedWithCurrentQuestion = false
                                 checkCanProceed()
                             }
                         }
@@ -96,6 +101,7 @@ struct PreSurveyView: View {
                         } else {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 currentQuestion += 1
+                                hasInteractedWithCurrentQuestion = false
                                 checkCanProceed()
                             }
                         }
@@ -117,8 +123,6 @@ struct PreSurveyView: View {
         case 0:
             return $surveyData.feeling
         case 1:
-            return $surveyData.painLevel
-        case 2:
             return $surveyData.motivation
         default:
             return $surveyData.feeling
@@ -130,8 +134,6 @@ struct PreSurveyView: View {
         case 0:
             surveyData.feeling = rating
         case 1:
-            surveyData.painLevel = rating
-        case 2:
             surveyData.motivation = rating
         default:
             break
@@ -139,13 +141,17 @@ struct PreSurveyView: View {
     }
     
     private func checkCanProceed() {
+        // User must have interacted with the rating control to proceed
+        guard hasInteractedWithCurrentQuestion else {
+            canProceed = false
+            return
+        }
+        
         switch currentQuestion {
         case 0:
-            canProceed = surveyData.feeling > 0
+            canProceed = surveyData.feeling >= 0  // Accept 0 as valid answer
         case 1:
-            canProceed = surveyData.painLevel > 0
-        case 2:
-            canProceed = surveyData.motivation > 0
+            canProceed = surveyData.motivation >= 0  // Accept 0 as valid answer
         default:
             canProceed = false
         }
@@ -179,12 +185,11 @@ struct SecondaryButtonStyle: ButtonStyle {
 
 struct SurveyData {
     var feeling: Int = 0
-    var painLevel: Int = 0
     var motivation: Int = 0
     var timestamp: Date = Date()
     
     var isComplete: Bool {
-        return feeling > 0 && painLevel > 0 && motivation > 0
+        return feeling >= 0 && motivation >= 0  // Accept 0 as valid answer
     }
 }
 

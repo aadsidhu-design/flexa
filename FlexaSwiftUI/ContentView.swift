@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(\.colorScheme) var colorScheme
     @EnvironmentObject var navigationCoordinator: NavigationCoordinator
+    @StateObject private var calibrationCheckService = CalibrationCheckService.shared
     @State private var selectedTab = 0
     @State private var showingCalibrationIntro = false
     
@@ -44,19 +45,39 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NavigateToTab"))) { note in
             if let idx = note.userInfo?["tabIndex"] as? Int {
+                print("🏠 [Navigation] Received NavigateToTab request: \(idx)")
                 selectedTab = idx
+                
+                // Force navigation if requested
+                if note.userInfo?["forceNavigation"] as? Bool == true {
+                    print("🏠 [Navigation] 🚀 FORCING navigation to tab \(idx)")
+                }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ClearNavigationStack"))) { _ in
+            print("🏠 [Navigation] 🗑️ Clearing navigation stack")
+            navigationCoordinator.clearAll()
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NavigateToGamesTab"))) { _ in
             selectedTab = 1 // Games tab
         }
         .onAppear {
             // Check if user needs to complete ROM calibration on app launch
-            let hasCompletedCalibration = UserDefaults.standard.bool(forKey: "hasCompletedROMCalibration")
-            if !hasCompletedCalibration {
-                showingCalibrationIntro = true
-                print("🎯 User has not completed ROM calibration, showing intro screen on app launch")
+            // Add a small delay to ensure motion service is fully initialized
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                calibrationCheckService.checkCalibrationStatus()
+                if calibrationCheckService.shouldShowOnboarding {
+                    showingCalibrationIntro = true
+                    print("🎯 User has not completed ROM calibration, showing intro screen on app launch")
+                }
             }
+        }
+        .onReceive(calibrationCheckService.$shouldShowOnboarding) { shouldShow in
+            showingCalibrationIntro = shouldShow
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCalibrationOnboarding"))) { _ in
+            showingCalibrationIntro = true
+            print("🎯 [CalibrationCheck] Forced to show onboarding via notification")
         }
         .fullScreenCover(isPresented: $showingCalibrationIntro) {
             CalibrationIntroView()
