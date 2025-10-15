@@ -72,8 +72,10 @@ class CameraPreview: UIView {
         
         FlexaLog.motion.info("📹 [PREVIEW] Setting up preview layer for session: \(captureSession)")
         self.previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        self.previewLayer?.videoGravity = .resizeAspectFill
-        FlexaLog.motion.info("📹 [PREVIEW] Preview layer created with videoGravity=resizeAspectFill")
+        self.previewLayer?.videoGravity = .resizeAspect
+        self.previewLayer?.magnificationFilter = .linear
+        self.previewLayer?.masksToBounds = true
+        FlexaLog.motion.info("📹 [PREVIEW] Preview layer created with videoGravity=resizeAspect")
         
         self.updateConnectionConfiguration(for: captureSession)
         
