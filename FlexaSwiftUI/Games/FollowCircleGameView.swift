@@ -362,35 +362,66 @@ struct FollowCircleGameView: View {
     }
     
     private func updateUserCirclePosition() {
-        guard let keypoints = motionService.poseKeypoints else {
+        guard let transform = motionService.currentARKitTransform else {
+            // No ARKit data available - center cursor
             userCirclePosition = CGPoint(x: screenSize.width / 2, y: screenSize.height / 2)
             rom = motionService.currentROM
             return
         }
         
-        // Track the active arm's wrist using vision-based camera data
-        let activeWrist = (keypoints.phoneArm == .left) ? keypoints.leftWrist : keypoints.rightWrist
+        // Extract 3D position from ARKit transform (columns.3 is translation vector)
+        let pos = SIMD3<Double>(
+            Double(transform.columns.3.x),
+            Double(transform.columns.3.y),
+            Double(transform.columns.3.z)
+        )
         
-        guard let wrist = activeWrist else {
-            // Wrist not visible, keep current position
+        // Initialize baseline on first frame
+        if arBaseline == nil {
+            arBaseline = pos
+            userCirclePosition = CGPoint(x: screenSize.width / 2, y: screenSize.height / 2)
+            return
+        }
+        
+        guard let baseline = arBaseline else {
             rom = motionService.currentROM
             return
         }
         
-        // Map vision coordinates to screen coordinates
-        let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+        // Calculate relative movement from baseline
+        let relX = pos.x - baseline.x  // Horizontal: right/left
+        let relZ = pos.z - baseline.z  // Vertical: up/down
         
-        // Smooth cursor movement for better tracking
-        let alpha: CGFloat = 0.75
-        if userCirclePosition == .zero {
-            userCirclePosition = mapped
-        } else {
-            userCirclePosition = CGPoint(
-                x: userCirclePosition.x * (1 - alpha) + mapped.x * alpha,
-                y: userCirclePosition.y * (1 - alpha) + mapped.y * alpha
-            )
-        }
+        let centerX = screenSize.width / 2
+        let centerY = screenSize.height / 2
         
+        // Movement range for responsive tracking
+        let horizontalRange = min(screenSize.width / 2 - 40, 250.0)
+        let verticalRange = min(screenSize.height / 2 - 60, 300.0)
+        
+        // Apply gain for 1:1 hand tracking
+        let gain: Double = 4.5
+        let screenDeltaX = relX * gain
+        let screenDeltaY = relZ * gain
+        
+        // Clamp to normalized range
+        let nx = max(-1.0, min(1.0, screenDeltaX))
+        let ny = max(-1.0, min(1.0, screenDeltaY))
+        
+        // Calculate target position
+        let targetX = centerX + CGFloat(nx) * horizontalRange
+        let targetY = centerY + CGFloat(ny) * verticalRange
+        
+        // Apply bounds with padding
+        let horizontalPadding = cursorRadius + 12
+        let boundedX = max(horizontalPadding, min(screenSize.width - horizontalPadding, targetX))
+        let verticalTopPadding: CGFloat = 60
+        let verticalBottomPadding: CGFloat = 100
+        let boundedY = max(verticalTopPadding, min(screenSize.height - verticalBottomPadding, targetY))
+        
+        // Update cursor position
+        userCirclePosition = CGPoint(x: boundedX, y: boundedY)
+        lastScreenPoint = userCirclePosition
         rom = motionService.currentROM
     }
     
