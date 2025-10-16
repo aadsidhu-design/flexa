@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		083550482E9ACC6F00F3BD70 /* pose_landmarker_full.task in Resources */ = {isa = PBXBuildFile; fileRef = 083550472E9ACC6F00F3BD70 /* pose_landmarker_full.task */; };
+		462630EB4228071D792E518B /* Pods_FlexaSwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B5B0C5D201FD7ABA3851601 /* Pods_FlexaSwiftUI.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		08D64BF02E6401CF0026FF72 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,9 +29,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		083550472E9ACC6F00F3BD70 /* pose_landmarker_full.task */ = {isa = PBXFileReference; lastKnownFileType = file; path = pose_landmarker_full.task; sourceTree = "<group>"; };
 		08D64BE22E6401CD0026FF72 /* FlexaSwiftUI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlexaSwiftUI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		08D64BEF2E6401CF0026FF72 /* FlexaSwiftUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlexaSwiftUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		08D64BF92E6401CF0026FF72 /* FlexaSwiftUIUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlexaSwiftUIUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3B5B0C5D201FD7ABA3851601 /* Pods_FlexaSwiftUI.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_FlexaSwiftUI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		7273E0B28B535B3FBD936230 /* Pods-FlexaSwiftUI.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FlexaSwiftUI.debug.xcconfig"; path = "Target Support Files/Pods-FlexaSwiftUI/Pods-FlexaSwiftUI.debug.xcconfig"; sourceTree = "<group>"; };
+		FE845EFB3202BAA050F313E8 /* Pods-FlexaSwiftUI.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FlexaSwiftUI.release.xcconfig"; path = "Target Support Files/Pods-FlexaSwiftUI/Pods-FlexaSwiftUI.release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -42,6 +51,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				462630EB4228071D792E518B /* Pods_FlexaSwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,6 +77,9 @@
 			children = (
 				08D64BE42E6401CD0026FF72 /* FlexaSwiftUI */,
 				08D64BE32E6401CD0026FF72 /* Products */,
+				77958F6EB01DA6F3A6A89403 /* Pods */,
+				DB4C129F227814DA7D8C35AE /* Frameworks */,
+				083550472E9ACC6F00F3BD70 /* pose_landmarker_full.task */,
 			);
 			sourceTree = "<group>";
 		};
@@ -80,6 +93,23 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		77958F6EB01DA6F3A6A89403 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				7273E0B28B535B3FBD936230 /* Pods-FlexaSwiftUI.debug.xcconfig */,
+				FE845EFB3202BAA050F313E8 /* Pods-FlexaSwiftUI.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		DB4C129F227814DA7D8C35AE /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				3B5B0C5D201FD7ABA3851601 /* Pods_FlexaSwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -87,6 +117,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 08D64C032E6401CF0026FF72 /* Build configuration list for PBXNativeTarget "FlexaSwiftUI" */;
 			buildPhases = (
+				45F411ED2D6E167FCA0F176F /* [CP] Check Pods Manifest.lock */,
 				08D64BDE2E6401CD0026FF72 /* Sources */,
 				08D64BDF2E6401CD0026FF72 /* Frameworks */,
 				08D64BE02E6401CD0026FF72 /* Resources */,
@@ -99,8 +130,6 @@
 				08D64BE42E6401CD0026FF72 /* FlexaSwiftUI */,
 			);
 			name = FlexaSwiftUI;
-			packageProductDependencies = (
-			);
 			productName = FlexaSwiftUI;
 			productReference = 08D64BE22E6401CD0026FF72 /* FlexaSwiftUI.app */;
 			productType = "com.apple.product-type.application";
@@ -173,8 +202,6 @@
 			);
 			mainGroup = 08D64BD92E6401CC0026FF72;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 08D64BE32E6401CD0026FF72 /* Products */;
 			projectDirPath = "";
@@ -192,6 +219,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				083550482E9ACC6F00F3BD70 /* pose_landmarker_full.task in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -210,6 +238,31 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		45F411ED2D6E167FCA0F176F /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-FlexaSwiftUI-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		08D64BDE2E6401CD0026FF72 /* Sources */ = {
@@ -372,6 +425,7 @@
 		};
 		08D64C042E6401CF0026FF72 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7273E0B28B535B3FBD936230 /* Pods-FlexaSwiftUI.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -408,6 +462,7 @@
 		};
 		08D64C052E6401CF0026FF72 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = FE845EFB3202BAA050F313E8 /* Pods-FlexaSwiftUI.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

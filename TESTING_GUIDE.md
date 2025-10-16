@@ -1,238 +1,407 @@
-# Testing Guide - Camera Games & System Fixes
+# Testing Guide for Recent Fixes & Improvements
 
-## Quick Test Plan
+## Date: 2025-01-11
 
-### 1. **Follow Circle (Pendulum Circles)** 🔵
-**Setup**: Hold phone in hand with screen facing you
-
-**Test Checklist**:
-- [ ] Move hand RIGHT → cursor moves RIGHT (not left!)
-- [ ] Move hand FORWARD → cursor moves UP (not down!)
-- [ ] Move in clockwise circle → cursor follows clockwise (not counter-clockwise!)
-- [ ] Complete ONE full circle → should count as 1 rep (not 8-14!)
-- [ ] Very small movements near center → should NOT count as reps
-- [ ] Check logs: Should see SPARC data points being collected
-
-**Expected Rep Count**: ~1 rep per 3-5 seconds of circular movement
+This guide provides step-by-step testing instructions for all recent fixes and improvements.
 
 ---
 
-### 2. **Arm Raises (Constellation Maker)** ⭐
-**Setup**: Prop phone so camera sees upper body
+## 🎯 1. CONSTELLATION GAME (ARM RAISES) - SMART VALIDATION
 
-**Test Checklist**:
-- [ ] Hand circle ONLY appears when wrist is detected
-- [ ] Hand circle DISAPPEARS when wrist not in frame
-- [ ] Hand circle sticks precisely to wrist (no lag/offset)
-- [ ] Line appears ONLY when hovering over current target dot
-- [ ] No line to hand when not near target
-- [ ] UI shows "Pattern 1/3" (not score or timer)
-- [ ] Coordinates logged in console match on-screen position
+### Location:
+**Games → Arm Raises / Constellation Maker**
 
-**Expected**: Clean, precise hand tracking with no ghost circles
+### Test 1: Triangle Validation
+**Expected Behavior:** Can start anywhere, connect any unvisited point, must close to start
 
----
+1. Start the Arm Raises game
+2. Move your wrist to ANY dot to begin (don't have to start at top)
+3. Connect dots in any order (e.g., start at bottom-left → top → bottom-right)
+4. Try to complete WITHOUT returning to start
+   - ❌ Should NOT show "Complete"
+5. Return to your starting dot
+   - ✅ Should show "Complete" and move to next pattern
+6. **PASS:** Pattern completes only when closed
 
-### 3. **Balloon Pop (Elbow Extension)** 🎈
-**Setup**: Prop phone so camera sees upper body
+### Test 2: Square Diagonal Prevention
+**Expected Behavior:** Must follow edges, diagonals are blocked
 
-**Test Checklist**:
-- [ ] ONLY ONE pin visible (for active arm)
-- [ ] No extra pins or circles
-- [ ] Pin moves UP when you raise hand
-- [ ] Pin moves DOWN when you lower hand
-- [ ] Pin tip is at wrist position (not offset)
-- [ ] Balloon pops when pin touches it
-- [ ] Balloons appear overhead (one at a time)
+1. Continue to Square pattern (2nd pattern)
+2. Start at any corner
+3. Try to connect to diagonal corner (e.g., top-left → bottom-right)
+   - ❌ Should show "Incorrect" in RED
+   - ❌ Should play error haptic
+   - ❌ Should RESET pattern after 0.5s
+4. Start again and follow edges properly (e.g., 0→1→2→3→0)
+   - ✅ Should complete successfully
+5. **PASS:** Diagonals rejected, edges accepted
 
-**Expected**: Single pin tracking vertically, clean balloon popping
+### Test 3: Circle Adjacent-Only Rule
+**Expected Behavior:** Can only connect to immediate left/right neighbor
 
----
+1. Continue to Circle pattern (3rd pattern)
+2. Start at any dot on the circle
+3. Try to skip a dot (e.g., if at position 0, try to go to position 2)
+   - ❌ Should show "Incorrect" in RED
+   - ❌ Should reset pattern
+4. Start again and go to immediate neighbor (position 0 → 1 or 0 → 7)
+   - ✅ Should accept connection
+5. Continue around the circle one dot at a time
+   - ✅ Should complete when all connected
+6. **PASS:** Only adjacent connections work
 
-### 4. **Wall Climbers** 🧗
-**Setup**: Prop phone so camera sees full body
+### Test 4: Visual Feedback
+**Expected Behavior:** Dots stay in place, change color, lines persist
 
-**Test Checklist**:
-- [ ] Altitude meter displays clearly
-- [ ] Shows "Reps: X" count
-- [ ] NO timer displayed
-- [ ] Arms up → altitude increases
-- [ ] Arms down → ready for next climb
-- [ ] Hand circles track both wrists accurately
+1. Start any pattern
+2. As you connect dots, verify:
+   - ✅ Dots NEVER move from original position
+   - ✅ Connected dots turn GREEN
+   - ✅ Cyan lines stay between connected dots
+   - ✅ Live line follows your wrist to next target
+3. **PASS:** Visual feedback is clear and stable
 
-**Expected**: Clean altitude display, accurate rep counting
+### Test 5: Dynamic Instructions
+**Expected Behavior:** Instructions change per pattern
 
----
-
-### 5. **Fan the Flame (Scapular Retractions)** 🔥
-**Setup**: Hold phone in hand
-
-**Test Checklist**:
-- [ ] Swing LEFT → flame reduces
-- [ ] Swing RIGHT → flame reduces
-- [ ] Full swing (left→right OR right→left) = 1 rep
-- [ ] NOT 2 reps per full cycle!
-- [ ] Small swings count if above threshold
-- [ ] Very tiny movements don't count
-
-**Expected**: ~1 rep per full pendulum swing
-
----
-
-### 6. **Game Instructions** 📖
-**Test Checklist**:
-- [ ] All 6 games have clear, concise instructions
-- [ ] Each step has appropriate emoji
-- [ ] Instructions explain phone orientation clearly
-- [ ] Instructions explain what movement to do
-- [ ] Instructions explain goal/objective
-- [ ] Instructions give helpful tips
-
-**Expected**: User can understand how to play without confusion
+1. Triangle: Should say "Connect all points, then return to start!"
+2. Square: Should say "Follow the edges - no diagonals!"
+3. Circle: Should say "Go left or right to next point!"
+4. **PASS:** Instructions are context-aware
 
 ---
 
-### 7. **Download Data** 💾
-**Test Checklist**:
-- [ ] Go to Settings
-- [ ] Tap "Download Data"
-- [ ] Confirmation dialog appears
-- [ ] After confirm, file export happens
-- [ ] iOS share sheet appears
-- [ ] Can save to Files app
-- [ ] JSON file contains all session data
+## 🗻 2. WALL CLIMBERS - TEXT-FREE ALTITUDE METER
 
-**Expected**: Complete data export to JSON file
+### Location:
+**Games → Wall Climbers**
 
----
+### Test 1: Visual Design
+**Expected Behavior:** No text, pure gradient bar
 
-### 8. **Skip Survey** ⏭️
-**Test Checklist**:
-- [ ] Complete any exercise
-- [ ] Post-survey appears
-- [ ] Tap "Skip Survey" button
-- [ ] Session completes without survey
-- [ ] Goals still update correctly
-- [ ] Session appears in history
+1. Start Wall Climbers game
+2. Look at right side of screen for altitude meter
+3. Verify:
+   - ✅ NO altitude numbers displayed
+   - ✅ NO "Goal" text
+   - ✅ Only smooth gradient bar (green→yellow→orange→red)
+   - ✅ Semi-transparent black background
+4. **PASS:** Completely text-free
 
-**Expected**: Skipping survey works, session still saves
+### Test 2: Animation
+**Expected Behavior:** Smooth progress animation
 
----
+1. Raise your arm up and down
+2. Watch altitude meter fill and empty
+3. Verify:
+   - ✅ Gradient animates smoothly (0.3s transitions)
+   - ✅ No jittering or jumping
+   - ✅ Colors blend naturally as you climb
+4. **PASS:** Smooth animations
 
-## Debug Console Checks
+### Test 3: Screen Sizes
+**Expected Behavior:** Works on different devices
 
-### Coordinate Logging (Camera Games)
-Look for these logs:
-```
-📍 [Game-COORDS] RAW Vision: x=XXX.XX, y=YYY.YY
-📍 [Game-COORDS] MAPPED Screen: x=XXX.X, y=YYY.Y
-📍 [Game-COORDS] Final position: x=XXX.X, y=YYY.Y
-```
-
-### Rep Detection Logging
-Look for these logs:
-```
-✅ [FollowCircle] Circle completed! Rep #X, Angle traveled: XXX.X°
-🍃 [Fan] LEFT/RIGHT swing detected - Rep!
-```
-
-### SPARC Tracking
-Look for these logs:
-```
-📊 [FollowCircle] SPARC collected: XX data points, final score: XX.XX
-```
+1. Test on iPhone SE (small screen)
+2. Test on iPhone 14 Pro Max (large screen)
+3. Verify:
+   - ✅ Meter is always visible on right edge
+   - ✅ Doesn't obscure hand tracking circle
+   - ✅ Proportional sizing
+4. **PASS:** Responsive design
 
 ---
 
-## Common Issues & Solutions
+## 📊 3. PAIN LEVEL GRAPH - ZERO VALUE FIX
 
-### Issue: Coordinates seem inverted
-**Solution**: Check that CoordinateMapper is rotating and mirroring correctly
-- Vision coords should be rotated 90° clockwise
-- X should be mirrored for front camera
+### Location:
+**Progress Tab → Select "Pain Change" metric**
 
-### Issue: Too many reps counted
-**Solution**: Check rep detection thresholds
-- Circle game: Minimum 320° travel required
-- Fan game: Must alternate left/right swings
+### Test 1: Zero Pre-Pain Session
+**Expected Behavior:** Shows in graph even with 0 pre-pain
 
-### Issue: Hand circle not showing
-**Solution**: Check pose detection
-- Ensure wrist landmark is detected
-- Check camera has clear view
-- Verify lighting conditions
+1. Complete an exercise session
+2. When asked "How much pain before?", select **0** (no pain)
+3. After exercise, select **5** (some pain developed)
+4. Go to Progress tab
+5. Select "Pain Change" from dropdown
+6. Verify:
+   - ✅ Today's bar shows +5 (pain increased)
+   - ✅ Bar is visible and colored
+7. **PASS:** Zero pre-pain tracked
 
-### Issue: Movement feels laggy
-**Solution**: Check smoothing alpha values
-- Higher alpha = less smoothing, more responsive
-- Current values: 0.7-0.8 for good balance
+### Test 2: Zero Post-Pain Session
+**Expected Behavior:** Shows pain reduction to zero
 
----
+1. Complete another exercise session
+2. When asked "How much pain before?", select **7** (significant pain)
+3. After exercise, select **0** (pain completely gone)
+4. Go to Progress tab → "Pain Change"
+5. Verify:
+   - ✅ Today's bar shows -7 (pain reduced)
+   - ✅ Negative values displayed correctly
+7. **PASS:** Zero post-pain tracked
 
-## Performance Checks
+### Test 3: Weekly Aggregation
+**Expected Behavior:** Averages multiple sessions per day
 
-### Frame Rate
-- Should maintain ~60 FPS during games
-- Check console for "Performance issues detected" warnings
-- Memory should stay under 250MB
+1. Complete 3 sessions in one day with different pain changes:
+   - Session 1: +2 (0→2)
+   - Session 2: -3 (5→2)
+   - Session 3: -1 (3→2)
+2. Check Progress → "Pain Change"
+3. Verify:
+   - ✅ Today shows average: (-2) / 3 = -0.67
+   - ✅ Multiple sessions properly averaged
+4. **PASS:** Correct aggregation
 
-### SPARC Calculation
-- Should collect data points every frame
-- Should calculate smoothness score at session end
-- Score should be between -10 and 0 (higher = smoother)
+### Test 4: Week View
+**Expected Behavior:** Monday through Sunday display
 
----
-
-## Build Verification
-
-```bash
-# Build succeeded with only minor warnings
-** BUILD SUCCEEDED **
-
-# No errors, only harmless warnings about AppIntents
-```
-
----
-
-## Files to Review
-
-If issues occur, check these files:
-1. `CoordinateMapper.swift` - Coordinate transformation
-2. `FollowCircleGameView.swift` - Circular rep detection
-3. `SimplifiedConstellationGameView.swift` - Hand tracking
-4. `BalloonPopGameView.swift` - Pin positioning
-5. `UnifiedRepDetectionService.swift` - Rep detection logic
+1. Complete sessions over several days
+2. Check Progress → "Pain Change"
+3. Verify:
+   - ✅ Week starts on Monday
+   - ✅ Days without sessions show 0
+   - ✅ Days with sessions show averaged change
+   - ✅ All 7 days visible (Mon-Sun)
+4. **PASS:** Proper week view
 
 ---
 
-## Success Criteria
+## 🤖 4. CUSTOM EXERCISES - VERIFICATION
 
-✅ All camera games map coordinates correctly for vertical phone
-✅ Rep detection is accurate (not overcounting)
-✅ UI is clean (no extra circles, timers where not needed)
-✅ Instructions are clear and actionable
-✅ Download data exports complete session history
-✅ Skip survey works without breaking session flow
+### Location:
+**Games Tab → "+" Button → Custom Exercise Creator**
+
+### Test 1: Vague Prompt
+**Expected Behavior:** AI fills in intelligent defaults
+
+1. Enter prompt: "shoulder movement"
+2. Tap "Analyze with AI"
+3. Wait for analysis
+4. Verify:
+   - ✅ Suggests tracking mode (camera/handheld)
+   - ✅ Identifies joint (armpit/elbow)
+   - ✅ Determines movement type
+   - ✅ Sets reasonable ROM threshold
+   - ✅ Provides helpful reasoning
+5. **PASS:** AI handles vague input
+
+### Test 2: Detailed Prompt
+**Expected Behavior:** AI respects user specifics
+
+1. Enter prompt: "pendulum swings with phone in hand, 10 reps, focusing on smooth arcs from side to side"
+2. Analyze
+3. Verify:
+   - ✅ Selects handheld mode
+   - ✅ Identifies pendulum movement type
+   - ✅ Sets appropriate thresholds
+   - ✅ Reasoning mentions smooth arcs and side-to-side
+4. **PASS:** AI follows instructions
+
+### Test 3: Camera Exercise Execution
+**Expected Behavior:** Rep detection adapts to parameters
+
+1. Create camera-based exercise (e.g., "overhead arm raises")
+2. Start the exercise
+3. Perform movements
+4. Verify:
+   - ✅ Reps counted when ROM threshold met
+   - ✅ Cooldown prevents double-counting
+   - ✅ Visual feedback (camera view) clear
+   - ✅ SPARC calculated from wrist tracking
+5. **PASS:** Camera exercise works
+
+### Test 4: Handheld Exercise Execution
+**Expected Behavior:** ARKit tracking adapts
+
+1. Create handheld exercise (e.g., "figure-8 patterns")
+2. Start with phone in hand
+3. Perform movements
+4. Verify:
+   - ✅ Reps counted based on position/ROM
+   - ✅ Movement smoothness tracked
+   - ✅ Timer counts down from 2:00
+   - ✅ Session data saved properly
+5. **PASS:** Handheld exercise works
+
+### Test 5: Exercise History
+**Expected Behavior:** Stats update over time
+
+1. Complete same custom exercise 3 times
+2. Go to Games tab
+3. Find your custom exercise card
+4. Verify:
+   - ✅ "Times Completed" increases
+   - ✅ Average ROM updates
+   - ✅ Average SPARC updates
+   - ✅ Can tap to see details or start again
+5. **PASS:** History tracking works
 
 ---
 
-## Next Steps After Testing
+## ⚡ 5. PERFORMANCE VERIFICATION
 
-1. Test on physical device with real users
-2. Gather feedback on rep detection sensitivity
-3. Monitor crash reports for coordinate edge cases
-4. Consider adaptive difficulty based on user performance
-5. Add visual feedback for rep requirements being met
+### Test 1: Frame Rate
+**Expected Behavior:** Smooth 60 FPS during games
+
+1. Start any camera-based game (Constellation, Wall Climbers, Balloon Pop)
+2. Wave your arm rapidly
+3. Observe:
+   - ✅ Hand tracking circle follows smoothly
+   - ✅ No lag or stuttering
+   - ✅ Animations are fluid
+   - ✅ No dropped frames visible
+4. **PASS:** Maintains 60 FPS
+
+### Test 2: Memory Usage
+**Expected Behavior:** No memory leaks or excessive usage
+
+1. Start app
+2. Play 5 different games in succession
+3. Go to Progress tab, then Games tab
+4. Navigate back and forth multiple times
+5. Verify:
+   - ✅ App doesn't slow down over time
+   - ✅ No crashes or freezes
+   - ✅ Transitions remain smooth
+6. **PASS:** Memory management good
+
+### Test 3: Battery Impact
+**Expected Behavior:** Reasonable battery drain
+
+1. Note battery percentage before starting
+2. Play games for 10 minutes continuously
+3. Note battery percentage after
+4. Verify:
+   - ✅ Drain is reasonable (~5-10% for 10 min)
+   - ✅ Device doesn't overheat excessively
+5. **PASS:** Acceptable battery usage
 
 ---
 
-## Emergency Rollback
+## 🎨 6. UI/UX VERIFICATION
 
-If critical issues found:
-```bash
-git log --oneline | head -5  # Find commit before fixes
-git revert <commit-hash>     # Revert changes
-xcodebuild clean build       # Rebuild
-```
+### Test 1: Dark Mode Support
+**Expected Behavior:** All screens readable in dark mode
 
-All changes are in version control and can be easily reverted if needed.
+1. Enable dark mode in iOS settings
+2. Navigate through all app screens
+3. Verify:
+   - ✅ Text is readable (sufficient contrast)
+   - ✅ Colors are pleasing
+   - ✅ No jarring bright areas
+4. **PASS:** Dark mode works
+
+### Test 2: Haptic Feedback
+**Expected Behavior:** Tactile responses for actions
+
+1. During Constellation game:
+   - ✅ Success haptic when connecting dot
+   - ✅ Error haptic on incorrect connection
+2. During Wall Climbers:
+   - ✅ Success haptic on rep completion
+3. Other games:
+   - ✅ Appropriate feedback for actions
+4. **PASS:** Haptics are appropriate
+
+### Test 3: Error Recovery
+**Expected Behavior:** Graceful handling of issues
+
+1. Cover camera completely during game
+   - ✅ Shows "Camera Obstructed" overlay
+   - ✅ Game pauses
+   - ✅ Resumes when uncovered
+2. Move phone very fast during handheld game
+   - ✅ Shows "Too Fast" warning if applicable
+   - ✅ Can continue when slowed
+3. **PASS:** Error states handled
+
+---
+
+## 📱 7. CROSS-DEVICE TESTING
+
+### Devices to Test:
+- iPhone SE (2nd/3rd gen) - Small screen
+- iPhone 13/14 - Standard size
+- iPhone 14 Pro Max - Large screen
+- iPad (if supported)
+
+### Verify:
+- ✅ All UI elements visible and accessible
+- ✅ Touch targets are appropriately sized
+- ✅ Text is readable at all sizes
+- ✅ Games play correctly on all devices
+
+---
+
+## ✅ ACCEPTANCE CRITERIA
+
+### All Tests Pass If:
+
+1. **Constellation Game:**
+   - [ ] Triangle allows any path but requires closure
+   - [ ] Square blocks diagonals, resets on incorrect
+   - [ ] Circle enforces adjacent-only connections
+   - [ ] Visual feedback is clear and stable
+   - [ ] Instructions update per pattern
+
+2. **Wall Climbers:**
+   - [ ] Altitude meter has NO text
+   - [ ] Gradient animates smoothly
+   - [ ] Visible on all screen sizes
+
+3. **Pain Graph:**
+   - [ ] Sessions with 0 pre-pain appear
+   - [ ] Sessions with 0 post-pain appear
+   - [ ] Weekly aggregation is correct
+   - [ ] Monday-Sunday week displayed
+
+4. **Custom Exercises:**
+   - [ ] AI analyzes prompts intelligently
+   - [ ] Both camera and handheld modes work
+   - [ ] Rep detection adapts to parameters
+   - [ ] History updates correctly
+
+5. **Performance:**
+   - [ ] 60 FPS maintained
+   - [ ] No memory leaks
+   - [ ] Reasonable battery usage
+
+6. **General:**
+   - [ ] No crashes or freezes
+   - [ ] All haptics work
+   - [ ] Error states handled gracefully
+
+---
+
+## 🐛 KNOWN ISSUES (Pre-Existing)
+
+These issues existed before recent fixes and are not regressions:
+
+1. `MovementPatternAnalyzer.swift` - Type resolution errors (doesn't affect runtime)
+2. `ComprehensiveSessionData.swift` - Minor type warnings (non-critical)
+
+These do not affect app functionality in Debug/Release builds.
+
+---
+
+## 📝 REGRESSION TESTING
+
+After any future changes, re-run all tests in this guide to ensure:
+- Constellation validation still works
+- Pain graph still shows zero values
+- Altitude meter remains text-free
+- Custom exercises continue functioning
+
+---
+
+## 🎉 CONCLUSION
+
+If all tests pass, the app is ready for:
+- Beta testing with physical therapists
+- App Store submission
+- Production release
+
+**Happy Testing!** 🚀

@@ -21,7 +21,7 @@ struct FanOutTheFlameGameView: View {
     @State private var observedMotionServiceReps: Int = 0
     @State private var hasInitializedGame = false
     
-    // Fan animation state (ROM tracking now handled by Universal3D engine)
+    // Fan animation state (ROM tracking handled by InstantARKit tracker stack)
     
     private let maxGameDuration: TimeInterval = 120
     private let flameDecayRate: Double = 0.02 // Smaller decay so it takes more reps to extinguish the flame
@@ -80,6 +80,9 @@ struct FanOutTheFlameGameView: View {
             }
         }
         .onAppear {
+            // Keep screen on during game
+            UIApplication.shared.isIdleTimerDisabled = true
+            
             guard !hasInitializedGame else {
                 FlexaLog.motion.info("🔁 [FanOutTheFlame] View reappeared - skipping automatic setup (already initialized)")
                 return
@@ -88,6 +91,9 @@ struct FanOutTheFlameGameView: View {
             setupGame()
         }
         .onDisappear {
+            // Re-enable idle timer (allow screen to sleep)
+            UIApplication.shared.isIdleTimerDisabled = false
+            
             FlexaLog.motion.info("👋 [FanOutTheFlame] View disappearing - forcing cleanup")
             // Explicitly stop game first
             if isGameActive {
@@ -131,8 +137,8 @@ struct FanOutTheFlameGameView: View {
     
     
     private func updateFanMotion() {
-        // Use ARKit position for fan animation (ROM calculation now handled by Universal3D engine)
-        guard let currentTransform = motionService.universal3DEngine.currentTransform else { return }
+    // Use ARKit position for fan animation (ROM calculation now handled by InstantARKitTracker)
+    guard let currentTransform = motionService.currentARKitTransform else { return }
         
         // Extract position for animation feedback only
         let currentPosition = SIMD3<Double>(

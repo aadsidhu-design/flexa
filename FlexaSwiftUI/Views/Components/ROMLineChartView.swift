@@ -27,7 +27,7 @@ struct ROMLineChartView: View {
                         AxisGridLine().foregroundStyle(.white.opacity(0.1))
                         AxisTick().foregroundStyle(.white)
                         AxisValueLabel {
-                            if let v = value.as(Double.self) {
+                            if let v = value.as(Double.self), !v.isNaN, !v.isInfinite {
                                 Text("\(Int(v))°")
                                     .font(.caption)
                                     .foregroundColor(.white)

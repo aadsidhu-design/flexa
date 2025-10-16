@@ -1,5 +1,5 @@
-import SwiftUI
 import Charts
+import SwiftUI
 
 struct EnhancedProgressViewFixed: View {
     @Environment(\.dismiss) private var dismiss
@@ -10,7 +10,7 @@ struct EnhancedProgressViewFixed: View {
     @State private var showingMetricPicker = false
     @State private var showingSessionPicker = false
     @State private var showingSessionDetails = false
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header with dropdowns
@@ -36,17 +36,20 @@ struct EnhancedProgressViewFixed: View {
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Session dropdown (right) - only show for session-based metrics
                 if selectedGraphType.requiresSession {
                     Button(action: { showingSessionPicker = true }) {
                         HStack {
-                            Text(selectedSession != nil ? formatSessionTitle(selectedSession!) : "Select Session")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                                .lineLimit(1)
+                            Text(
+                                selectedSession != nil
+                                    ? formatSessionTitle(selectedSession!) : "Select Session"
+                            )
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
                             Image(systemName: "chevron.down")
                                 .foregroundColor(.gray)
                         }
@@ -63,7 +66,7 @@ struct EnhancedProgressViewFixed: View {
             .padding(.horizontal)
             .padding(.top, 10)
             .padding(.bottom, 50)
-            
+
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 20) {
                     // Chart section
@@ -83,10 +86,12 @@ struct EnhancedProgressViewFixed: View {
                     }()
                     let yVals = sortedPoints.map { $0.value }
                     let fit = linearFit(x: xVals, y: yVals)
-                    
+
                     VStack(spacing: 8) {
                         let periodLabel: String = {
-                            if selectedGraphType == .rom || selectedGraphType == .sparc { return "Session" }
+                            if selectedGraphType == .rom || selectedGraphType == .sparc {
+                                return "Session"
+                            }
                             return "Week"
                         }()
                         Text("\(selectedGraphType.displayName) over \(periodLabel)")
@@ -100,12 +105,12 @@ struct EnhancedProgressViewFixed: View {
                             trendLine: fit,
                             xValues: xVals
                         )
-                        .frame(height: 350) // Increased height for better symbol visibility
+                        .frame(height: 350)  // Increased height for better symbol visibility
                         .padding(.horizontal)
-                        .padding(.vertical, 20) // More balanced padding
+                        .padding(.vertical, 20)  // More balanced padding
                     }
                 }
-                
+
                 // View Details button - only show for session-based metrics
                 if selectedGraphType.requiresSession && selectedSession != nil {
                     Button("View Details") {
@@ -125,23 +130,27 @@ struct EnhancedProgressViewFixed: View {
         .onAppear {
             loadData()
         }
-    .onReceive(NotificationCenter.default.publisher(for: .sessionUploadCompleted)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .sessionUploadCompleted)) { _ in
             loadData()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataCleared"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DataCleared"))) {
+            _ in
             loadData()
         }
         .navigationBarHidden(true)
     }
-    
+
     private func loadData() {
         // Sort sessions by newest first
-        let latest = LocalDataManager.shared.getCachedSessions().sorted { $0.timestamp > $1.timestamp }
+        let latest = LocalDataManager.shared.getCachedSessions().sorted {
+            $0.timestamp > $1.timestamp
+        }
         sessions = latest
         if selectedGraphType.requiresSession {
             if let current = selectedSession,
-               let newest = sessions.first,
-               newest.timestamp > current.timestamp {
+                let newest = sessions.first,
+                newest.timestamp > current.timestamp
+            {
                 // Auto-advance to newest when a fresh session arrives
                 selectedSession = newest
             } else if selectedSession == nil {
@@ -150,7 +159,7 @@ struct EnhancedProgressViewFixed: View {
         }
         isLoading = false
     }
-    
+
     private func formatSessionTitle(_ session: ExerciseSessionData) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
@@ -158,13 +167,14 @@ struct EnhancedProgressViewFixed: View {
         let dateString = formatter.string(from: session.timestamp)
         return "\(session.exerciseType) - \(dateString)"
     }
-    
+
     private func getDataPoints(for type: GraphType) -> [MetricPoint] {
         switch type {
         case .rom:
             guard let session = selectedSession else { return [] }
             // Prefer per-rep ROM history; fallback to legacy romData
-            let baseSeries: [Double] = !session.romHistory.isEmpty ? session.romHistory : session.romData.map { $0.angle }
+            let baseSeries: [Double] =
+                !session.romHistory.isEmpty ? session.romHistory : session.romData.map { $0.angle }
             // Clamp to recorded reps to avoid mismatched plotting
             let repCount = max(1, session.reps)
             let romSeries = Array(baseSeries.prefix(repCount))
@@ -179,7 +189,8 @@ struct EnhancedProgressViewFixed: View {
             if sparcData.isEmpty { sparcData = session.sparcHistory }
             return sparcData.enumerated().map { index, sparc in
                 // Calculate time in seconds based on session duration and data points
-                let timeInSeconds = (Double(index) / Double(max(1, sparcData.count - 1))) * session.duration
+                let timeInSeconds =
+                    (Double(index) / Double(max(1, sparcData.count - 1))) * session.duration
                 let timestamp = session.timestamp.addingTimeInterval(timeInSeconds)
                 return MetricPoint(date: timestamp, value: sparc)
             }
@@ -188,9 +199,10 @@ struct EnhancedProgressViewFixed: View {
             let cal = Calendar.current
             let today = cal.startOfDay(for: Date())
             // Compute Monday of current week (fixed Mon..Sun ordering)
-            let wkday = cal.component(.weekday, from: today) // 1=Sun..7=Sat
-            let daysToMonday = (wkday + 5) % 7 // maps Sun->6, Mon->0, Tue->1, ...
-            let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -daysToMonday, to: today) ?? today)
+            let wkday = cal.component(.weekday, from: today)  // 1=Sun..7=Sat
+            let daysToMonday = (wkday + 5) % 7  // maps Sun->6, Mon->0, Tue->1, ...
+            let start = cal.startOfDay(
+                for: cal.date(byAdding: .day, value: -daysToMonday, to: today) ?? today)
             let end = cal.date(byAdding: .day, value: 6, to: start) ?? today
             let grouped = Dictionary(grouping: comps) { cal.startOfDay(for: $0.timestamp) }
             var result: [MetricPoint] = []
@@ -213,7 +225,8 @@ struct EnhancedProgressViewFixed: View {
             // Monday..Sunday fixed week
             let wkday = cal.component(.weekday, from: today)
             let daysToMonday = (wkday + 5) % 7
-            let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -daysToMonday, to: today) ?? today)
+            let start = cal.startOfDay(
+                for: cal.date(byAdding: .day, value: -daysToMonday, to: today) ?? today)
             let end = cal.date(byAdding: .day, value: 6, to: start) ?? today
             let grouped = Dictionary(grouping: comps) { cal.startOfDay(for: $0.timestamp) }
             var result: [MetricPoint] = []
@@ -223,7 +236,7 @@ struct EnhancedProgressViewFixed: View {
                     let diffs = sessions.compactMap { s -> Double? in
                         let pre = s.preSurveyData.painLevel
                         guard let post = s.postSurveyData?.painLevel else { return nil }
-                        return (pre > 0 && post > 0) ? Double(post - pre) : nil
+                        return Double(post - pre)
                     }
                     let avg = diffs.isEmpty ? 0.0 : diffs.reduce(0, +) / Double(diffs.count)
                     result.append(MetricPoint(date: day, value: avg))
@@ -235,14 +248,14 @@ struct EnhancedProgressViewFixed: View {
             return result
         }
     }
-    
+
     private func getAIScoreDayCount() -> Int {
         let comps = LocalDataManager.shared.getCachedComprehensiveSessions()
         let cal = Calendar.current
         let uniqueDays = Set(comps.map { cal.startOfDay(for: $0.timestamp) })
         return uniqueDays.count
     }
-    
+
     private func colorForMetric(_ metric: GraphType) -> Color {
         switch metric {
         case .rom: return .blue
@@ -251,7 +264,7 @@ struct EnhancedProgressViewFixed: View {
         case .pain: return .red
         }
     }
-    
+
     private func gradientColorForMetric(_ metric: GraphType) -> Color {
         switch metric {
         case .rom: return Color(red: 0.0, green: 0.48, blue: 1.0)
@@ -260,7 +273,7 @@ struct EnhancedProgressViewFixed: View {
         case .pain: return Color(red: 1.0, green: 0.27, blue: 0.23)
         }
     }
-    
+
     // Linear regression y = m*x + b
     private func linearFit(x: [Double], y: [Double]) -> (Double, Double)? {
         guard x.count == y.count, x.count >= 2 else { return nil }
@@ -278,10 +291,13 @@ struct EnhancedProgressViewFixed: View {
 
     private func findComprehensive(for session: ExerciseSessionData) -> ComprehensiveSessionData? {
         let comps = LocalDataManager.shared.getCachedComprehensiveSessions()
-        let candidates = comps.filter { $0.exerciseName.lowercased() == session.exerciseType.lowercased() }
+        let candidates = comps.filter {
+            $0.exerciseName.lowercased() == session.exerciseType.lowercased()
+        }
         guard !candidates.isEmpty else { return nil }
         let best = candidates.min { a, b in
-            abs(a.timestamp.timeIntervalSince(session.timestamp)) < abs(b.timestamp.timeIntervalSince(session.timestamp))
+            abs(a.timestamp.timeIntervalSince(session.timestamp))
+                < abs(b.timestamp.timeIntervalSince(session.timestamp))
         }
         return best
     }
@@ -293,48 +309,49 @@ struct AppleFitnessChart: View {
     let graphType: GraphType
     let trendLine: (Double, Double)?
     let xValues: [Double]
-    
+
     private var dayFormatter: DateFormatter {
         let formatter = DateFormatter()
-        formatter.dateFormat = "EEE" // Mon, Tue, Wed, etc.
+        formatter.dateFormat = "EEE"  // Mon, Tue, Wed, etc.
         return formatter
     }
-    
+
     private var chartYDomain: ClosedRange<Double> {
         guard !points.isEmpty else { return 0...100 }
-        
+
         let minValue = points.map { $0.value }.min() ?? 0
         let maxValue = points.map { $0.value }.max() ?? 100
         let valueRange = maxValue - minValue
-        
+
         // Generous padding to prevent symbol cutoff - especially for large dots
-        let basePadding = max(valueRange * 0.35, 10.0) // Increased to 35% with minimum 10 units
-        
+        let basePadding = max(valueRange * 0.35, 10.0)  // Increased to 35% with minimum 10 units
+
         // Extra padding for graphs with large symbols (AI Score, Pain)
         let hasLargeSymbols = graphType == .aiScore || graphType == .pain
         let symbolPadding = hasLargeSymbols ? max(valueRange * 0.15, 5.0) : 0
-        
+
         let totalPadding = basePadding + symbolPadding
-        
+
         let paddedMin = max(0, minValue - totalPadding)
         let paddedMax = maxValue + totalPadding
-        
+
         // Ensure reasonable bounds for each graph type
         switch graphType {
         case .aiScore:
             return paddedMin...max(paddedMax, 100)
         case .rom:
-            return paddedMin...max(paddedMax, 180) // ROM typically 0-180°
+            return paddedMin...max(paddedMax, 180)  // ROM typically 0-180°
         case .sparc:
-            return paddedMin...max(paddedMax, 100) // SPARC 0-100 scale
+            return paddedMin...max(paddedMax, 100)  // SPARC 0-100 scale
         case .pain:
-            return max(-10, paddedMin)...min(10, paddedMax) // Pain change -10 to +10
+            return max(-10, paddedMin)...min(10, paddedMax)  // Pain change -10 to +10
         }
     }
-    
+
     var body: some View {
         // Precompute index mapping for stable x positions
-        let indexMap: [UUID: Int] = Dictionary(uniqueKeysWithValues: points.enumerated().map { ($1.id, $0) })
+        let indexMap: [UUID: Int] = Dictionary(
+            uniqueKeysWithValues: points.enumerated().map { ($1.id, $0) })
         Chart {
             // Data series with Apple Fitness styling
             ForEach(points) { item in
@@ -348,7 +365,10 @@ struct AppleFitnessChart: View {
                     )
                 case .sparc:
                     let idx = indexMap[item.id] ?? 0
-                    let timeInSeconds: Double = (idx < xValues.count) ? xValues[idx] : (points.first.map { item.date.timeIntervalSince($0.date) } ?? 0)
+                    let timeInSeconds: Double =
+                        (idx < xValues.count)
+                        ? xValues[idx]
+                        : (points.first.map { item.date.timeIntervalSince($0.date) } ?? 0)
                     AppleFitnessAreaMark(
                         x: .value("Time (s)", timeInSeconds),
                         y: .value("Smoothness", item.value),
@@ -360,7 +380,7 @@ struct AppleFitnessChart: View {
                         y: .value(graphType.yAxisTitle, item.value),
                         color: gradientColorForMetric(graphType)
                     )
-                    
+
                     PointMark(
                         x: .value("Day", item.date, unit: .day),
                         y: .value(graphType.yAxisTitle, item.value)
@@ -377,7 +397,7 @@ struct AppleFitnessChart: View {
                     LinearGradient(
                         colors: [
                             Color.black.opacity(0.95),
-                            Color.black.opacity(0.85)
+                            Color.black.opacity(0.85),
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -443,23 +463,27 @@ struct AppleFitnessChart: View {
         .chartYAxisLabel(graphType.yAxisTitle, position: .leading)
         .modifier(SinglePointXDomain(points: points, graphType: graphType))
     }
-    
+
     // MARK: - Single Point X Domain Helper
     private struct SinglePointXDomain: ViewModifier {
         let points: [MetricPoint]
         let graphType: GraphType
-        
+
         func body(content: Content) -> some View {
             switch graphType {
             case .aiScore, .pain:
-                    // Always show the current week anchored Mon..Sun
-                    let cal = Calendar.current
-                    let today = Date()
-                    let wkday = cal.component(.weekday, from: today)
-                    let daysToMonday = (wkday + 5) % 7
-                    let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -daysToMonday, to: today) ?? today)
-                    let end = cal.date(byAdding: .day, value: 1, to: cal.date(byAdding: .day, value: 6, to: start) ?? start) ?? today
-                    return AnyView(content.chartXScale(domain: start...end))
+                // Always show the current week anchored Mon..Sun
+                let cal = Calendar.current
+                let today = Date()
+                let wkday = cal.component(.weekday, from: today)
+                let daysToMonday = (wkday + 5) % 7
+                let start = cal.startOfDay(
+                    for: cal.date(byAdding: .day, value: -daysToMonday, to: today) ?? today)
+                let end =
+                    cal.date(
+                        byAdding: .day, value: 1,
+                        to: cal.date(byAdding: .day, value: 6, to: start) ?? start) ?? today
+                return AnyView(content.chartXScale(domain: start...end))
             case .rom:
                 // 1-based domain for reps
                 if points.count == 1 {
@@ -478,7 +502,7 @@ struct AppleFitnessChart: View {
             }
         }
     }
-    
+
     private func gradientColorForMetric(_ metric: GraphType) -> Color {
         switch metric {
         case .rom: return Color(red: 0.0, green: 0.48, blue: 1.0)
@@ -494,7 +518,7 @@ struct AppleFitnessAreaMark<X: Plottable>: ChartContent {
     let x: PlottableValue<X>
     let y: PlottableValue<Double>
     let color: Color
-    
+
     var body: some ChartContent {
         // Gradient area fill
         AreaMark(
@@ -506,21 +530,21 @@ struct AppleFitnessAreaMark<X: Plottable>: ChartContent {
             LinearGradient(
                 colors: [
                     color.opacity(0.6),
-                    color.opacity(0.1)
+                    color.opacity(0.1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
         )
         .interpolationMethod(.catmullRom)
-        
+
         // Smooth curved line
         LineMark(x: x, y: y)
             .foregroundStyle(
                 LinearGradient(
                     colors: [
                         color,
-                        color.opacity(0.8)
+                        color.opacity(0.8),
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
@@ -543,7 +567,7 @@ enum GraphType: String, CaseIterable {
     case rom = "rom"
     case sparc = "sparc"
     case pain = "pain"
-    
+
     var displayName: String {
         switch self {
         case .rom: return "ROM"
@@ -552,7 +576,7 @@ enum GraphType: String, CaseIterable {
         case .pain: return "Pain Change"
         }
     }
-    
+
     var yAxisTitle: String {
         switch self {
         case .rom: return "ROM (°)"
@@ -561,7 +585,7 @@ enum GraphType: String, CaseIterable {
         case .pain: return "Pain Change"
         }
     }
-    
+
     var xAxisTitle: String {
         switch self {
         case .rom: return "Rep"
@@ -569,7 +593,7 @@ enum GraphType: String, CaseIterable {
         case .aiScore, .pain: return "Day"
         }
     }
-    
+
     var requiresSession: Bool {
         return self == .rom || self == .sparc
     }
@@ -579,7 +603,7 @@ struct SessionPickerView: View {
     let sessions: [ExerciseSessionData]
     @Binding var selectedSession: ExerciseSessionData?
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         NavigationView {
             List {

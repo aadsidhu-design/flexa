@@ -52,7 +52,7 @@ import Combine
 
         switch exerciseType.lowercased() {
         case "make your own":
-            return GameType.makeYourOwn.aiDescription
+            return "A custom therapeutic exercise designed by the user to target specific range of motion and motor control goals."
         case "test rom":
             return "A handheld calibration and testing exercise to measure baseline range of motion capabilities. Used for initial assessment and progress tracking."
         default:

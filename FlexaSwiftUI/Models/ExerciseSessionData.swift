@@ -14,14 +14,14 @@ struct ExerciseSessionData: Identifiable, Codable {
     var repTimestamps: [Date]
     var sparcHistory: [Double] // SPARC per individual rep
     let romData: [ROMPoint] // For backwards compatibility
-    let sparcData: [SPARCPoint] // For backwards compatibility
+    var sparcData: [SPARCPoint] // For backwards compatibility
     let aiScore: Int?
     let painPre: Int?
     let painPost: Int?
     var sparcScore: Double // Overall SPARC score
     let formScore: Double
     let consistency: Double
-    let peakVelocity: Double
+    var peakVelocity: Double
     let motionSmoothnessScore: Double
     // Optional sensor aggregates
     let accelAvgMagnitude: Double?

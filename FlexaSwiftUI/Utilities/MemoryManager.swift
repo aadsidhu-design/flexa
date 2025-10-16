@@ -31,7 +31,7 @@ final class MemoryManager {
     /// Check if system is under memory pressure
     func isUnderMemoryPressure() -> Bool {
         let currentUsage = getCurrentMemoryUsage()
-        return currentUsage > 180.0 // 180MB threshold
+        return currentUsage > 150.0 // 150MB threshold (reduced from 180MB)
     }
     
     // MARK: - System-wide Memory Cleanup

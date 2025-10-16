@@ -98,6 +98,7 @@ struct RatingButton: View {
                                 .stroke(Color.white.opacity(0.3), lineWidth: 1)
                         )
                 )
+                .contentShape(Circle())
                 .scaleEffect(isSelected ? 1.1 : 1.0)
                 .animation(.easeOut(duration: 0.2), value: isSelected)
         }

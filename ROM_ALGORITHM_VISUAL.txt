@@ -1,0 +1,106 @@
+📐 ROM CALCULATION ALGORITHM - VISUAL COMPARISON
+=================================================
+
+OLD APPROACH (Peak-to-Peak):
+----------------------------
+Phone movement in space:
+    
+    Start ●─────────►Peak1 ●──────►Valley ●──────►Peak2 ●
+           segment1       segment2      segment3
+    
+    ROM = segment between Peak1 and Peak2
+    ❌ Problem: Misses initial movement from Start to Peak1
+    ❌ Problem: Complex peak detection logic
+    ❌ Problem: Segmentation can lose information
+
+
+NEW APPROACH (Full Arc - SIMPLE!):
+----------------------------------
+Phone movement in space:
+    
+    Start ●─────►─────►─────►─────►─────►End
+          └────── entire arc drawn ──────┘
+    
+    ROM = total arc length through ALL points
+    ✅ Phone draws arc in 3D space
+    ✅ Project to 2D to remove tilt
+    ✅ Measure ENTIRE arc length
+    ✅ That's it! No peaks, no segmentation!
+
+
+CONCRETE EXAMPLE - Pendulum Swing:
+----------------------------------
+Phone positions (2D projected): 
+[P0, P1, P2, P3, P4, P5]
+ 0m  0.1m 0.2m 0.35m 0.28m 0.15m
+
+OLD METHOD:
+- Detect peaks: Find local maxima → Complex!
+- Need 2+ peaks → Sometimes fails
+- ROM = arc between peaks → Incomplete!
+
+NEW METHOD:
+- Arc = |P1-P0| + |P2-P1| + |P3-P2| + |P4-P3| + |P5-P4|
+- Arc = 0.1 + 0.1 + 0.15 + 0.07 + 0.13 = 0.55m
+- ROM = (0.55 / 0.75) × 180/π = 41.9°
+- DONE! ✨
+
+
+FORMULA BREAKDOWN:
+-----------------
+Step 1: Collect 3D positions as phone moves
+   positions3D = [pos1, pos2, pos3, ...]
+
+Step 2: Project to optimal 2D plane
+   positions2D = project(positions3D)
+
+Step 3: Calculate TOTAL arc length
+   arcLength = Σ distance(pos[i], pos[i-1]) for all i
+
+Step 4: Convert to angle
+   ROM = (arcLength / armRadius) × (180 / π)
+   
+   Where armRadius = calibratedArmLength + 0.15m gripOffset
+
+
+WHY THIS IS THE RIGHT APPROACH:
+-------------------------------
+✅ Matches reality: Phone literally draws an arc in space
+✅ Simple as possible: No complex peak detection
+✅ Complete measurement: Every point matters
+✅ Robust: Works for any movement pattern
+✅ Intuitive: "Measure the arc I drew" - that's it!
+
+
+COMPARISON TO DRAWING:
+---------------------
+Think of it like drawing with a pen:
+
+OLD WAY:
+- Try to find the "important" parts of your drawing
+- Only measure between those parts
+- Miss some of the actual drawing
+
+NEW WAY:
+- Just measure the ENTIRE line you drew
+- Simple, complete, accurate!
+
+
+CODE SIMPLICITY:
+---------------
+Old: ~60 lines with peak detection, segmentation, validation
+New: ~15 lines - project, loop through points, sum distances, convert
+
+That's a 75% reduction in code complexity!
+
+
+LOGGING OUTPUT:
+--------------
+You'll see:
+📐 [ROM-FullArc] 120 points, TotalArc=0.234m, Radius=0.75m → ROM=17.9°
+
+This tells you:
+- Total points in the movement
+- Complete arc length measured
+- Arm radius used
+- Final ROM calculated

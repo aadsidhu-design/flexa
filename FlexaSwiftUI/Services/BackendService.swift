@@ -231,7 +231,7 @@ private func encodeGoals(_ goals: UserGoals) -> [String: Any] {
 }
 
 extension ExerciseSessionData {
-    fileprivate func toComprehensiveFallback() -> ComprehensiveSessionData {
+    func toComprehensiveFallback() -> ComprehensiveSessionData {
         let performance = ExercisePerformanceData(
             score: score,
             reps: reps,
@@ -239,7 +239,16 @@ extension ExerciseSessionData {
             romData: romHistory,
             romPerRep: romHistory,
             repTimestamps: [],
-            sparcDataPoints: sparcData.map { SPARCDataPoint(timestamp: $0.timestamp, sparcValue: $0.sparc, movementPhase: "", jointAngles: [:]) },
+            sparcDataPoints: sparcData.map {
+                SPARCDataPoint(
+                    timestamp: $0.timestamp,
+                    sparcValue: $0.sparc,
+                    movementPhase: "",
+                    jointAngles: [:],
+                    confidence: 0.4,
+                    dataSource: .imu
+                )
+            },
             movementQualityScores: sparcHistory,
             aiScore: aiScore ?? 0,
             aiFeedback: aiFeedback ?? "",

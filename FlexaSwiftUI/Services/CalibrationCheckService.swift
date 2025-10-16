@@ -24,8 +24,8 @@ class CalibrationCheckService: ObservableObject {
         let hasArmLengthData = CalibrationDataManager.shared.currentCalibration?.armLength != nil ||
                               (KeychainManager.shared.getString(for: "rom_calibration_arm_length_v1") != nil)
         
-        // ARKit engine status
-        let isARKitCalibrated = motionService.universal3DEngine.isCalibrated
+    // ARKit calibration status mirrors CalibrationDataManager in new system
+    let isARKitCalibrated = CalibrationDataManager.shared.isCalibrated
 
         // Calibration is valid if we have stored data OR ARKit is calibrated
         isCalibrated = hasValidCalibration || hasArmLengthData || isARKitCalibrated

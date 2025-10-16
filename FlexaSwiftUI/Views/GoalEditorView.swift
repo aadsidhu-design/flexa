@@ -220,7 +220,7 @@ struct ROMGoalEditCard: View {
                 
                 Spacer()
                 
-                Text("\(Int(value))\(unit)")
+                Text("\(Int(value.isNaN || value.isInfinite ? 0 : value))\(unit)")
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundColor(color)

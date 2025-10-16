@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CameraObstructionOverlay: View {
     let isObstructed: Bool
-    let reason: String
+    let reason: String?
     let isBackCamera: Bool
     
     var body: some View {
@@ -25,7 +25,7 @@ struct CameraObstructionOverlay: View {
                         .foregroundColor(.white)
                     
                     // Reason text
-                    Text(reason)
+                    Text(reason ?? "We're checking for the best camera angle—please hold steady.")
                         .font(.headline)
                         .foregroundColor(.white)
                         .multilineTextAlignment(.center)

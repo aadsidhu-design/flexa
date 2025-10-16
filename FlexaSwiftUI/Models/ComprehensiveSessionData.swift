@@ -162,11 +162,19 @@ struct ComprehensiveSessionData: Codable, Identifiable {
     }
 }
 
+enum SPARCDataSource: String, Codable {
+    case arkit
+    case imu
+    case vision
+}
+
 struct SPARCDataPoint: Codable {
     let timestamp: Date
     let sparcValue: Double
     let movementPhase: String // "acceleration", "deceleration", "steady"
     let jointAngles: [String: Double] // Joint name to angle mapping
+    let confidence: Double
+    let dataSource: SPARCDataSource
 }
 
 struct ExercisePerformanceData {

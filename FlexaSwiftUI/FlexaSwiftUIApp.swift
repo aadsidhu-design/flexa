@@ -54,7 +54,7 @@ struct FlexaSwiftUIApp: App {
                     let calMgr = CalibrationDataManager.shared
                     let storedValid = calMgr.isCalibrated && (calMgr.currentCalibration?.isCalibrationValid ?? false)
                     let armLen = calMgr.currentCalibration?.armLength
-                    let isARKit = motionService.universal3DEngine.isCalibrated
+                    let isARKit = calMgr.isCalibrated // ARKit calibration same as CalibrationDataManager
                     CalibrationCheckService.shared.checkCalibrationStatus()
                     let needsOnboarding = CalibrationCheckService.shared.shouldShowOnboarding
                     let armLenStr = armLen != nil ? String(format: "%.2f", armLen!) + "m" : "none"

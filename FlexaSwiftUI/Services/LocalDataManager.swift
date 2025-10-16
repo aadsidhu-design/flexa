@@ -273,9 +273,10 @@ class LocalDataManager: ObservableObject {
         userDefaults.removeObject(forKey: streaksKey)
         userDefaults.removeObject(forKey: sessionFilesKey)
         
-        // Reset session sequence base to 0 so daily sessions start fresh
-        setSessionSequenceBase(0)
-    markSessionSequenceNeedsReseed()
+        // NOTE: do NOT reset session sequence base or last session number here.
+        // The user requested that deleting local data should NOT change the
+        // session numbering sequence. Preserve session numbering so future
+        // sessions continue with the expected increment.
         
         // Remove sensor timelines directory
         let fm = FileManager.default

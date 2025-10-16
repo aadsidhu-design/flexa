@@ -6,6 +6,7 @@ struct ResultsView: View {
     @EnvironmentObject var navigationCoordinator: NavigationCoordinator
     @EnvironmentObject var backendService: BackendService
     @EnvironmentObject var geminiService: GeminiService
+    @EnvironmentObject var motionService: SimpleMotionService
     @State private var showingPostSurvey = false
     @State private var selectedTab = 0
     @State private var postSurveyData = PostSurveyData(
@@ -101,7 +102,7 @@ struct ResultsView: View {
                                     AxisTick().foregroundStyle(Color.gray.opacity(0.6))
                                     AxisValueLabel {
                                         if let v = value.as(Double.self) {
-                                            Text("\(String(format: "%.0f", v))%")
+                                            Text("\(String(format: "%.0f", v))°")
                                                 .font(.caption)
                                                 .foregroundColor(.white)
                                         }
@@ -119,8 +120,16 @@ struct ResultsView: View {
                             if !sessionData.sparcData.isEmpty {
                                 let start = sessionData.sparcData.first!.timestamp
                                 let timeValues = sessionData.sparcData.map { $0.timestamp.timeIntervalSince(start) }
+                                let sparcValues = sessionData.sparcData.map { $0.sparc }
                                 let maxTime = timeValues.max() ?? 0
+                                let minSparc = sparcValues.min() ?? 0
+                                let maxSparc = sparcValues.max() ?? 100
                                 let xDomainMax = max(1.0, ceil(maxTime))
+                                // Scale Y to actual data with padding (20% on each side for breathing room)
+                                let yRange = maxSparc - minSparc
+                                let yPadding = max(1.0, yRange * 0.15)
+                                let yMin = max(0, minSparc - yPadding)
+                                let yMax = min(100, maxSparc + yPadding)
                                 Chart {
                                     ForEach(Array(sessionData.sparcData.enumerated()), id: \.offset) { _, point in
                                         LineMark(
@@ -132,7 +141,7 @@ struct ResultsView: View {
                                     }
                                 }
                                 .frame(height: 300)
-                                .chartYScale(domain: 0...100)
+                                .chartYScale(domain: yMin...yMax)
                                 .chartXScale(domain: 0...xDomainMax)
                                 .chartPlotStyle { plot in
                                     plot.background(Color.black)
@@ -161,6 +170,13 @@ struct ResultsView: View {
                                 // Fallback: if only legacy per-rep history exists, synthesize uniform time axis across session duration
                                 let count = sessionData.sparcHistory.count
                                 let duration = max(1.0, sessionData.duration)
+                                let minSparc = sessionData.sparcHistory.min() ?? 0
+                                let maxSparc = sessionData.sparcHistory.max() ?? 100
+                                // Scale Y to actual data with padding
+                                let yRange = maxSparc - minSparc
+                                let yPadding = max(1.0, yRange * 0.15)
+                                let yMin = max(0, minSparc - yPadding)
+                                let yMax = min(100, maxSparc + yPadding)
                                 Chart {
                                     ForEach(Array(sessionData.sparcHistory.enumerated()), id: \.offset) { i, v in
                                         let t = (count > 1) ? (Double(i) / Double(count - 1)) * duration : 0.0
@@ -173,7 +189,7 @@ struct ResultsView: View {
                                     }
                                 }
                                 .frame(height: 300)
-                                .chartYScale(domain: 0...100)
+                                .chartYScale(domain: yMin...yMax)
                                 .chartPlotStyle { plot in
                                     plot.background(Color.black)
                                 }
@@ -237,6 +253,10 @@ struct ResultsView: View {
         }
         .background(Color.black)
         .navigationBarHidden(true)
+        .onAppear {
+            motionService.stopSession()
+            motionService.stopCamera(tearDownCompletely: true)
+        }
         .sheet(isPresented: $showingPostSurvey) {
             PostSurveyRetryView(
                 isPresented: $showingPostSurvey,
@@ -368,7 +388,7 @@ struct ResultsView: View {
 
         // Use real time-based SPARC points for upload (mapped from SPARCPoint)
         let sparcDataPoints: [SPARCDataPoint] = enriched.sparcData.map { point in
-            SPARCDataPoint(timestamp: point.timestamp, sparcValue: point.sparc, movementPhase: "steady", jointAngles: [:])
+            SPARCDataPoint(timestamp: point.timestamp, sparcValue: point.sparc, movementPhase: "steady", jointAngles: [:], confidence: 0.5, dataSource: .imu)
         }
 
         let performanceData = ExercisePerformanceData(

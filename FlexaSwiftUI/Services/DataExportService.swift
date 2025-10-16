@@ -1,211 +1,140 @@
-import Foundation
-import UIKit
+//
+//  DataExportService.swift
+//  FlexaSwiftUI
+//
+//  Data export service for downloading all user data
+//
 
-class DataExportService: ObservableObject {
+import Foundation
+
+class DataExportService {
     static let shared = DataExportService()
     
     private init() {}
     
+    /// Export all user data to a JSON file
+    /// Returns URL to the exported file, or nil if export failed
     func exportAllUserData() -> URL? {
-        // Create Flexa folder in Documents directory
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let flexaFolder = documentsPath.appendingPathComponent("Flexa", isDirectory: true)
-        
-        // Create folder if it doesn't exist
-        try? FileManager.default.createDirectory(at: flexaFolder, withIntermediateDirectories: true)
-        
-        // Create filename with readable timestamp
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let timestamp = dateFormatter.string(from: Date())
-        let exportURL = flexaFolder.appendingPathComponent("FlexaData_\(timestamp).json")
-        
         do {
-            // Gather comprehensive user data
-            let exportData = gatherAllUserData()
-            let sanitized = sanitizeJSONValue(exportData)
-            guard let sanitizedDict = sanitized as? [String: Any] else { 
-                throw NSError(domain: "DataExportService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to sanitize export payload"]) 
+            // Get all data from LocalDataManager
+            let localData = LocalDataManager.shared
+            
+            // Gather all data
+            let sessions = localData.getCachedComprehensiveSessions()
+            let goals = localData.getCachedGoals()
+            let streak = localData.getCachedStreak()
+            let customExercises = CustomExerciseManager.shared.customExercises
+            let sessionNumber = localData.getLastSessionNumber()
+            let userId = UserDefaults.standard.string(forKey: "backend_anonymous_user_id") ?? "unknown"
+            
+            // Create export data structure
+            let exportData: [String: Any] = [
+                "exportDate": ISO8601DateFormatter().string(from: Date()),
+                "appVersion": "1.0.0",
+                "userId": userId,
+                "sessionNumber": sessionNumber,
+                "totalSessions": sessions.count,
+                "goals": encodeGoals(goals),
+                "streak": encodeStreak(streak),
+                "customExercises": customExercises.map { encodeCustomExercise($0) },
+                "sessions": sessions.map { encodeSession($0) }
+            ]
+            
+            // Convert to JSON
+            let jsonData = try JSONSerialization.data(withJSONObject: exportData, options: [.prettyPrinted, .sortedKeys])
+            
+            // Create export directory
+            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let flexaDirectory = documentsURL.appendingPathComponent("Flexa", isDirectory: true)
+            
+            if !FileManager.default.fileExists(atPath: flexaDirectory.path) {
+                try FileManager.default.createDirectory(at: flexaDirectory, withIntermediateDirectories: true)
             }
             
-            // Write to file with pretty formatting
-            let jsonData = try JSONSerialization.data(withJSONObject: sanitizedDict, options: [.prettyPrinted, .sortedKeys])
-            try jsonData.write(to: exportURL)
+            // Create filename with timestamp
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss"
+            let timestamp = dateFormatter.string(from: Date())
+            let filename = "Flexa_Export_\(timestamp).json"
+            let fileURL = flexaDirectory.appendingPathComponent(filename)
             
-            print("✅ [DataExport] Successfully exported data to: \(exportURL.path)")
-            print("📊 [DataExport] File size: \(jsonData.count / 1024) KB")
+            // Write to file
+            try jsonData.write(to: fileURL, options: .atomic)
             
-            return exportURL
+            FlexaLog.backend.info("📥 Data export successful: \(filename)")
+            return fileURL
+            
         } catch {
-            print("❌ [DataExport] Export error: \(error)")
+            FlexaLog.backend.error("📥 Data export failed: \(error.localizedDescription)")
             return nil
         }
     }
     
-    private func gatherAllUserData() -> [String: Any] {
-        var exportData: [String: Any] = [:]
-        
-        // Export timestamp
-        exportData["exportDate"] = ISO8601DateFormatter().string(from: Date())
-        exportData["appVersion"] = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
-        
-        // User preferences
-        let userDefaults = UserDefaults.standard.dictionaryRepresentation()
-        let filteredDefaults = userDefaults.filter { key, _ in
-            key.hasPrefix("flexa_") || key.contains("user") || key.contains("setting")
-        }
-        // Pre-sanitize preferences as they often contain Data and Date values (e.g., "user_goals")
-        exportData["userPreferences"] = sanitizeJSONValue(filteredDefaults)
-        
-        // Session data (mock structure - replace with actual data source)
-        exportData["sessionHistory"] = gatherSessionData()
-        
-        // Progress data
-        exportData["progressMetrics"] = gatherProgressData()
-        
-        // SPARC data
-        exportData["sparcAnalysis"] = gatherSPARCData()
-        
-        return exportData
-    }
-
-    // MARK: - JSON Sanitization
-    // Recursively convert Foundation types into JSON-serializable values.
-    // - Date -> ISO8601 string
-    // - Data -> base64 string (attempt JSON decode first for readability)
-    // - Dictionary/Array -> recursively sanitize
-    // - Numbers/Strings/Bools/NSNull -> passthrough
-    private func sanitizeJSONValue(_ value: Any) -> Any {
-        switch value {
-        case let dict as [String: Any]:
-            var out: [String: Any] = [:]
-            for (k, v) in dict {
-                out[k] = sanitizeJSONValue(v)
-            }
-            return out
-        case let array as [Any]:
-            return array.map { sanitizeJSONValue($0) }
-        case let date as Date:
-            return ISO8601DateFormatter().string(from: date)
-        case let data as Data:
-            // Try to decode as JSON for readability; fallback to base64 string
-            if let obj = try? JSONSerialization.jsonObject(with: data) {
-                return sanitizeJSONValue(obj)
-            }
-            return data.base64EncodedString()
-        case let num as NSNumber:
-            return num
-        case let str as String:
-            return str
-        case is NSNull:
-            return NSNull()
-        default:
-            // As a last resort, stringify unknown types
-            return String(describing: value)
-        }
-    }
+    // MARK: - Encoding Helpers
     
-    private func gatherSessionData() -> [[String: Any]] {
-        // Use real session data from LocalDataManager
-        let sessions = LocalDataManager.shared.getCachedComprehensiveSessions()
-        
-        return sessions.map { session in
-            [
-                "id": session.id,
-                "date": ISO8601DateFormatter().string(from: session.timestamp),
-                "exerciseType": session.exerciseName,
-                "duration": session.duration,
-                "totalScore": session.totalScore,
-                "reps": session.totalReps,
-                "maxROM": session.maxROM,
-                "avgROM": session.avgROM,
-                "consistencyScore": session.consistencyScore,
-                "aiScore": session.aiScore,
-                "sparcScore": session.sparcScore,
-                "romPerRep": session.romPerRep,
-                "preSurveyPain": session.preSurveyData.painLevel,
-                "postSurveyPain": session.postSurveyData?.painLevel as Any? ?? NSNull(),
-                "sessionNumber": session.sessionNumber,
-                "gameSpecificData": session.gameSpecificData
-            ]
-        }
-    }
-    
-    private func gatherProgressData() -> [String: Any] {
-        let streak = LocalDataManager.shared.getCachedStreak()
-        let goals = LocalDataManager.shared.getCachedGoals()
-        let sessions = LocalDataManager.shared.getCachedComprehensiveSessions()
-        
-        let totalTime = sessions.reduce(0) { $0 + $1.duration }
-        let avgROM = sessions.isEmpty ? 0 : sessions.map({ $0.maxROM }).reduce(0, +) / Double(sessions.count)
-        let totalReps = sessions.reduce(0) { $0 + $1.totalReps }
-        
+    private func encodeGoals(_ goals: UserGoals) -> [String: Any] {
         return [
-            "totalSessions": sessions.count,
+            "dailyReps": goals.dailyReps,
+            "weeklyReps": goals.weeklyReps,
+            "targetROM": goals.targetROM,
+            "targetSmoothness": goals.targetSmoothness,
+            "targetAIScore": goals.targetAIScore,
+            "targetPainImprovement": goals.targetPainImprovement
+        ]
+    }
+    
+    private func encodeStreak(_ streak: StreakData) -> [String: Any] {
+        return [
             "currentStreak": streak.currentStreak,
             "longestStreak": streak.longestStreak,
-            "totalDaysActive": streak.totalDays,
-            "totalExerciseTime": totalTime,
-            "averageROM": avgROM,
-            "totalReps": totalReps,
             "lastExerciseDate": ISO8601DateFormatter().string(from: streak.lastExerciseDate),
-            "currentGoals": [
-                "dailyReps": goals.dailyReps,
-                "weeklyMinutes": goals.weeklyMinutes,
-                "targetROM": goals.targetROM,
-                "preferredGames": goals.preferredGames
-            ]
+            "totalDays": streak.totalDays
         ]
     }
     
-    private func gatherSPARCData() -> [String: Any] {
-        let sessions = LocalDataManager.shared.getCachedComprehensiveSessions()
-        let sessionFiles = LocalDataManager.shared.getCachedSessionFiles()
-        
-        let sparcValues = sessions.map { $0.sparcScore }
-        let avgSPARC = sparcValues.isEmpty ? 0 : sparcValues.reduce(0, +) / Double(sparcValues.count)
-        let bestSPARC = sparcValues.max() ?? 0
-        let worstSPARC = sparcValues.min() ?? 0
-        
-        // Calculate trend from recent sessions
-        let recentSessions = Array(sessions.prefix(10))
-        let sparcTrend: String
-        if recentSessions.count >= 2 {
-            let recentAvg = recentSessions.prefix(5).map({ $0.sparcScore }).reduce(0, +) / Double(min(5, recentSessions.count))
-            let olderAvg = recentSessions.suffix(5).map({ $0.sparcScore }).reduce(0, +) / Double(min(5, recentSessions.count))
-            sparcTrend = recentAvg > olderAvg ? "improving" : (recentAvg < olderAvg ? "declining" : "stable")
-        } else {
-            sparcTrend = "insufficient_data"
-        }
-        
+    private func encodeCustomExercise(_ exercise: CustomExercise) -> [String: Any] {
         return [
-            "averageSPARC": avgSPARC,
-            "bestSPARC": bestSPARC,
-            "worstSPARC": worstSPARC,
-            "sparcTrend": sparcTrend,
-            "totalSPARCMeasurements": sparcValues.count,
-            "sessionFilesCount": sessionFiles.count,
-            "sparcHistoryData": sessionFiles.map { file in
-                [
-                    "exerciseType": file.exerciseType,
-                    "timestamp": ISO8601DateFormatter().string(from: file.timestamp),
-                    "sparcHistory": file.sparcHistory,
-                    "reps": file.reps
-                ]
-            }
+            "id": exercise.id.uuidString,
+            "name": exercise.name,
+            "userDescription": exercise.userDescription,
+            "trackingMode": exercise.trackingMode.rawValue,
+            "jointToTrack": exercise.jointToTrack?.rawValue ?? "none",
+            "movementType": exercise.repParameters.movementType.rawValue,
+            "minimumROMThreshold": exercise.repParameters.minimumROMThreshold,
+            "minimumDistanceThreshold": exercise.repParameters.minimumDistanceThreshold ?? 0,
+            "directionality": exercise.repParameters.directionality.rawValue,
+            "repCooldown": exercise.repParameters.repCooldown
         ]
     }
     
-    func shareExportedData(url: URL, from viewController: UIViewController) {
-        let activityViewController = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    private func encodeSession(_ session: ComprehensiveSessionData) -> [String: Any] {
+        var sessionDict: [String: Any] = [
+            "sessionNumber": session.sessionNumber,
+            "exerciseName": session.exerciseName,
+            "timestamp": ISO8601DateFormatter().string(from: session.timestamp),
+            "duration": session.duration,
+            "totalReps": session.totalReps,
+            "avgROM": session.avgROM,
+            "maxROM": session.maxROM,
+            "sparcScore": session.sparcScore,
+            "aiScore": session.aiScore,
+            "romPerRep": session.romPerRep,
+            "sparcHistory": session.sparcDataOverTime.map { $0.sparcValue }
+        ]
         
-        // For iPad
-        if let popover = activityViewController.popoverPresentationController {
-            popover.sourceView = viewController.view
-            popover.sourceRect = CGRect(x: viewController.view.bounds.midX, y: viewController.view.bounds.midY, width: 0, height: 0)
-            popover.permittedArrowDirections = []
+        // Add survey data if available
+        sessionDict["preSurvey"] = [
+            "painLevel": session.preSurveyData.painLevel,
+            "timestamp": ISO8601DateFormatter().string(from: session.preSurveyData.timestamp)
+        ]
+        
+        if let postSurvey = session.postSurveyData {
+            sessionDict["postSurvey"] = [
+                "painLevel": postSurvey.painLevel,
+                "timestamp": ISO8601DateFormatter().string(from: postSurvey.timestamp)
+            ]
         }
         
-        viewController.present(activityViewController, animated: true)
+        return sessionDict
     }
 }

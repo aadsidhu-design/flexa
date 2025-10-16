@@ -20,8 +20,8 @@ struct ContentView: View {
                 GamesView()
                     .tag(1)
                     .tabItem {
-                        Image(systemName: "gamecontroller.fill")
-                        Text("Games")
+                        Image(systemName: "figure.strengthtraining.traditional")
+                        Text("Exercises")
                     }
                 
                 EnhancedProgressViewFixed()

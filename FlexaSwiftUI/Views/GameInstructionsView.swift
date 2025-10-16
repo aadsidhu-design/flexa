@@ -183,6 +183,8 @@ struct GameInstructionsView: View {
         }
         .onAppear {
             updateCanStartExercise()
+            // NO ARKit/Camera pre-initialization - causes crashes
+            // All motion tracking starts when game screen loads
         }
     }
     
@@ -194,59 +196,59 @@ struct GameInstructionsView: View {
         switch gameType {
         case .fruitSlicer:
             return [
-                "📱 Grip phone FIRMLY in dominant hand with screen facing you (vertical orientation)",
-                "💪 Swing arm ACROSS your body in smooth pendulum motions - shoulder rotation exercise",
-                "🎯 Slice fruits as they appear on screen - AVOID bombs!",
-                "⭐ Smooth, controlled swings score best. Game ends after 3 bomb hits. Go for maximum ROM!"
+                "Body Setup: Stand with feet shoulder-width apart. Relax shoulders and keep good posture.",
+                "Phone Position: Hold phone firmly in your dominant hand, screen facing you, vertical orientation.",
+                "Movement: Swing arm smoothly across your body in pendulum motions. Use your whole arm from the shoulder.",
+                "Gameplay: Slice fruits as they appear. Avoid bombs (3 hits ends game). Smooth swings = better scores."
             ]
         
         case .followCircle:
             return [
-                "📱 Hold phone normally in dominant hand (screen facing you, vertical grip)",
-                "🔄 Move YOUR ENTIRE ARM in LARGE CIRCULAR MOTIONS like drawing big circles in the air",
-                "🎯 Green cursor circle follows your hand - keep it INSIDE the white guide circle",
-                "⭐ Complete FULL circles (350°+) for reps. Larger, smoother circles = better ROM & score!"
+                "Body Setup: Stand comfortably with feet shoulder-width apart. Keep core stable.",
+                "Phone Position: Hold phone normally in dominant hand, screen facing you.",
+                "Movement: Move your entire arm in large circular motions, like drawing big circles in the air.",
+                "Gameplay: Keep green cursor inside the white guide circle. Complete full circles for reps. Larger circles = better ROM."
             ]
         
         case .wallClimbers:
             return [
-                "📱 PROP phone VERTICALLY on table/stand/chair so camera sees YOUR FULL BODY",
-                "🙆 Raise BOTH arms HIGH above your head, then lower smoothly to sides - controlled motion",
-                "🏔️ Altitude increases as arms go up, decreases as they come down. Goal: reach 1000m!",
-                "⭐ NO TIME LIMIT - take your time. Smooth, full range arm raises climb faster!"
+                "Body Setup: Stand facing the camera, arms at your sides. Ensure full body is visible on screen.",
+                "Phone Position: Prop phone vertically on a stable surface (table, stand, or chair). Front camera should see your entire upper body.",
+                "Movement: Raise both arms straight up above your head, then lower smoothly back to sides. Keep movements controlled.",
+                "Gameplay: Altitude increases as arms rise. Reach 1000m to win. No time limit - focus on full range motion."
             ]
         
         
         case .constellationMaker:
             return [
-                "📱 PROP phone VERTICALLY with front camera clearly viewing your upper body",
-                "✋ RAISE/MOVE your arm - a CYAN CIRCLE precisely tracks your wrist position",
-                "⭐ Guide circle to touch constellation dots IN ORDER (cyan line appears when near target)",
-                "🎯 Complete 3 constellation patterns. NO TIMER - focus on smooth, accurate movements!"
+                "Body Setup: Stand facing the camera with your upper body centered on screen.",
+                "Phone Position: Prop phone vertically. Front camera must clearly see your shoulders, arms, and hands.",
+                "Movement: Raise and move your arm. A cyan circle tracks your wrist position precisely.",
+                "Gameplay: Guide the circle to touch constellation dots in order. Cyan line shows when near target. Complete 3 patterns."
             ]
         
         case .balloonPop:
             return [
-                "📱 PROP phone VERTICALLY so front camera sees your FULL UPPER BODY (arm fully visible)",
-                "💪 RAISE arm UP and fully EXTEND ELBOW - cyan pin at wrist tip pops balloons",
-                "🎈 Pin follows your wrist exactly - move hand UP to reach balloons at screen top",
-                "⭐ Full elbow extension = maximum ROM! Pop balloons one at a time by reaching high."
+                "Body Setup: Stand facing the camera. Position yourself so your arm is fully visible when raised.",
+                "Phone Position: Prop phone vertically. Front camera should see from your waist to above your head.",
+                "Movement: Raise arm up and fully extend your elbow. A cyan pin at your wrist tip pops balloons.",
+                "Gameplay: Move hand up to reach balloons at screen top. Full elbow extension gives maximum ROM. Pop them one at a time."
             ]
         
         case .fanOutFlame:
             return [
-                "📱 Hold phone SECURELY in dominant hand (normal vertical grip, screen facing you)",
-                "💨 SWING arm HORIZONTALLY left and right across your body - like fanning flames",
-                "🔥 Each complete swing (left OR right) reduces flame - extinguish it to win!",
-                "⭐ Both short and long swings count. Smooth, consistent motion = better smoothness score!"
+                "Body Setup: Stand with feet shoulder-width apart. Keep your core engaged for stability.",
+                "Phone Position: Hold phone securely in dominant hand, screen facing you, vertical orientation.",
+                "Movement: Swing arm horizontally left and right across your body, like fanning flames.",
+                "Gameplay: Each complete swing (left or right) reduces the flame. Extinguish it to win. Smooth, consistent swings score best."
             ]
         
         case .makeYourOwn:
             return [
-                "📱 First, choose CAMERA mode (prop phone vertically) OR HANDHELD mode (hold phone)",
-                "🎮 CAMERA: tracks shoulder/elbow joints. HANDHELD: tracks device motion in hand",
-                "📋 Follow the specific on-screen instructions for your chosen exercise and mode",
-                "⭐ Fully customizable! Adjust duration and movement range to match your therapy needs."
+                "Body Setup: Stand tall with relaxed shoulders. Make sure you have space to move smoothly without twisting your torso.",
+                "Phone Position: Camera mode—prop your phone so the front camera sees your upper body. Handheld mode—hold the phone securely with the screen facing you.",
+                "Choose Mode: When the instructions screen appears, pick Camera or Handheld based on what the AI recommended (highlighted on screen).",
+                "Session Flow: Follow the reminder badge and let the two-minute timer guide your pace. Focus on smooth, pain-free motion—no scores or meters to watch."
             ]
         
         

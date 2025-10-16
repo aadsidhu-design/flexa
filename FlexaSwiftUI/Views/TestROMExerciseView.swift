@@ -156,7 +156,7 @@ struct TestROMExerciseView: View {
         repCount = 0
         
         // Start Universal3D ROM tracking
-        motionService.startGameSession(gameType: .testROM)
+        motionService.startGameSession(gameType: .fruitSlicer)
         // TestROM uses automatic 3D tracking
         
         print("🏁 [ROM Test] Started ARKit 3D tracking")

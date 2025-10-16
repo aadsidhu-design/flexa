@@ -158,36 +158,79 @@ class CalibrationDataManager: ObservableObject {
     private var quickChestPosition: SIMD3<Double>?
     private var quickReachPosition: SIMD3<Double>?
     
+    // MARK: - Multi-Sample Calibration (Noise Reduction)
+    
+    /// Collect 3-5 samples per calibration angle to reduce ARKit jitter
+    private var zeroSamples: [SIMD3<Double>] = []
+    private var ninetySamples: [SIMD3<Double>] = []
+    private var oneEightySamples: [SIMD3<Double>] = []
+    private let targetSamplesPerAngle = 3
+    private let maxVarianceMeters = 0.08  // 8cm max deviation between samples
+    
     private func storeTemporaryCalibrationData(angle: CalibrationAngle, quaternion: simd_quatf, gravity: simd_float3, gameType: String?) {
         tempGravity = gravity
         
         // Capture both IMU quaternion and ARKit 3D position
-        if let arkitTransform = SimpleMotionService.shared.universal3DEngine.currentTransform {
-            let position = SIMD3<Double>(
-                Double(arkitTransform.columns.3.x),
-                Double(arkitTransform.columns.3.y),
-                Double(arkitTransform.columns.3.z)
-            )
-            
-            switch angle {
-            case .zero:
-                tempZeroQuat = quaternion
-                zeroPosition = position
-                print("🎯 [Reformed Calibration] Captured 0° - IMU: \(quaternion), Position: \(String(format: "(%.3f,%.3f,%.3f)", position.x, position.y, position.z))")
-                
-            case .ninety:
-                tempNinetyQuat = quaternion
-                ninetyPosition = position
-                print("🎯 [Reformed Calibration] Captured 90° - IMU: \(quaternion), Position: \(String(format: "(%.3f,%.3f,%.3f)", position.x, position.y, position.z))")
-                
-            case .oneEighty:
-                tempOneEightyQuat = quaternion
-                oneEightyPosition = position
-                print("🎯 [Reformed Calibration] Captured 180° - IMU: \(quaternion), Position: \(String(format: "(%.3f,%.3f,%.3f)", position.x, position.y, position.z))")
-            }
-        } else {
+        guard let arkitTransform = SimpleMotionService.shared.currentARKitTransform else {
             print("⚠️ [Reformed Calibration] ARKit position not available for \(angle) - ensure ARKit is running")
             return
+        }
+        
+        let position = SIMD3<Double>(
+            Double(arkitTransform.columns.3.x),
+            Double(arkitTransform.columns.3.y),
+            Double(arkitTransform.columns.3.z)
+        )
+        
+        // Add sample to appropriate array
+        switch angle {
+        case .zero:
+            zeroSamples.append(position)
+            print("🎯 [Multi-Sample] Captured 0° sample #\(zeroSamples.count)/\(targetSamplesPerAngle) - Position: \(String(format: "(%.3f,%.3f,%.3f)", position.x, position.y, position.z))")
+            
+            if zeroSamples.count >= targetSamplesPerAngle {
+                if let averaged = validateAndAverageSamples(zeroSamples, angle: "0°") {
+                    tempZeroQuat = quaternion
+                    zeroPosition = averaged
+                    print("✅ [Multi-Sample] 0° position averaged and validated")
+                } else {
+                    print("❌ [Multi-Sample] 0° samples rejected - too much variance. Please hold still.")
+                    zeroSamples.removeAll()
+                    return
+                }
+            }
+            
+        case .ninety:
+            ninetySamples.append(position)
+            print("🎯 [Multi-Sample] Captured 90° sample #\(ninetySamples.count)/\(targetSamplesPerAngle) - Position: \(String(format: "(%.3f,%.3f,%.3f)", position.x, position.y, position.z))")
+            
+            if ninetySamples.count >= targetSamplesPerAngle {
+                if let averaged = validateAndAverageSamples(ninetySamples, angle: "90°") {
+                    tempNinetyQuat = quaternion
+                    ninetyPosition = averaged
+                    print("✅ [Multi-Sample] 90° position averaged and validated")
+                } else {
+                    print("❌ [Multi-Sample] 90° samples rejected - too much variance. Please hold still.")
+                    ninetySamples.removeAll()
+                    return
+                }
+            }
+            
+        case .oneEighty:
+            oneEightySamples.append(position)
+            print("🎯 [Multi-Sample] Captured 180° sample #\(oneEightySamples.count)/\(targetSamplesPerAngle) - Position: \(String(format: "(%.3f,%.3f,%.3f)", position.x, position.y, position.z))")
+            
+            if oneEightySamples.count >= targetSamplesPerAngle {
+                if let averaged = validateAndAverageSamples(oneEightySamples, angle: "180°") {
+                    tempOneEightyQuat = quaternion
+                    oneEightyPosition = averaged
+                    print("✅ [Multi-Sample] 180° position averaged and validated")
+                } else {
+                    print("❌ [Multi-Sample] 180° samples rejected - too much variance. Please hold still.")
+                    oneEightySamples.removeAll()
+                    return
+                }
+            }
         }
         
         // Validate and create calibration when all three positions are captured
@@ -200,11 +243,39 @@ class CalibrationDataManager: ObservableObject {
             )
         }
     }
+    
+    /// Validate samples have low variance and return averaged position
+    private func validateAndAverageSamples(_ samples: [SIMD3<Double>], angle: String) -> SIMD3<Double>? {
+        guard samples.count >= targetSamplesPerAngle else { return nil }
+        
+        // Calculate centroid
+        var sum = SIMD3<Double>(0, 0, 0)
+        for sample in samples {
+            sum += sample
+        }
+        let centroid = sum / Double(samples.count)
+        
+        // Calculate max deviation from centroid
+        var maxDeviation: Double = 0.0
+        for sample in samples {
+            let deviation = simd_distance(sample, centroid)
+            maxDeviation = max(maxDeviation, deviation)
+        }
+        
+        print("📊 [Sample Validation] \(angle): \(samples.count) samples, max deviation: \(String(format: "%.3f", maxDeviation))m (limit: \(String(format: "%.3f", maxVarianceMeters))m)")
+        
+        // Reject if too much variance (user not holding still)
+        guard maxDeviation <= maxVarianceMeters else {
+            return nil
+        }
+        
+        return centroid
+    }
 
     // MARK: - ARKit-only calibration capture
     /// Capture calibration pose using ARKit camera transform exclusively (no CoreMotion dependency)
     func captureCalibrationARKit(angle: CalibrationAngle, gameType: String?) {
-        guard let tr = SimpleMotionService.shared.universal3DEngine.currentTransform else {
+        guard let tr = SimpleMotionService.shared.currentARKitTransform else {
             print("⚠️ [CalibrationManager] ARKit transform unavailable for \(angle) capture. Ensure ARKit session is running.")
             return
         }
@@ -230,7 +301,7 @@ class CalibrationDataManager: ObservableObject {
     }
     /// Capture current ARKit position as either chest or full reach
     func captureQuickArmLength(_ stage: QuickArmLengthStage) {
-        guard let tr = SimpleMotionService.shared.universal3DEngine.currentTransform else {
+        guard let tr = SimpleMotionService.shared.currentARKitTransform else {
             print("⚠️ [QuickArmLen] ARKit transform unavailable for \(stage) capture.")
             return
         }
@@ -327,6 +398,11 @@ class CalibrationDataManager: ObservableObject {
         if isValid {
             // Calculate arm length from ARKit positions
             let armLength = calculateArmLengthFromPositions(zeroPos: zeroPos, ninetyPos: ninetyPos, oneEightyPos: oneEightyPos)
+            
+            // Validate position consistency (all positions should be ~armLength from shoulder)
+            let positionVariance = validatePositionConsistency(zeroPos: zeroPos, ninetyPos: ninetyPos, oneEightyPos: oneEightyPos, armLength: armLength)
+            print("🎯 [Reformed Calibration] ARKit Validation: arm_length=\(String(format: "%.3f", armLength))m, variance=\(String(format: "%.3f", positionVariance))m")
+            
             let shoulderPos = estimateShoulderPosition(zeroPos: zeroPos, oneEightyPos: oneEightyPos, armLength: armLength)
             
             let calibrationData = AnatomicalCalibrationData(
@@ -355,34 +431,85 @@ class CalibrationDataManager: ObservableObject {
         }
     }
     
+    // MARK: - Grip Offset Compensation
+    
     private func calculateArmLengthFromPositions(zeroPos: SIMD3<Double>, ninetyPos: SIMD3<Double>, oneEightyPos: SIMD3<Double>) -> Double {
-        // Use the longest distance as arm length (likely 0° to 180°)
+        // Use all three positions for robust arm length calculation
         let zeroToNinety = simd_distance(zeroPos, ninetyPos)
         let zeroToOneEighty = simd_distance(zeroPos, oneEightyPos)
         let ninetyToOneEighty = simd_distance(ninetyPos, oneEightyPos)
         
-        let maxDistance = max(zeroToNinety, zeroToOneEighty, ninetyToOneEighty)
+        // For 180° arc: chord ≈ 2R (where R = shoulder-to-phone distance)
+        // For 90° arc: chord ≈ R√2
+        // Calculate estimated radius from each chord
+        let r_from_180 = zeroToOneEighty / 2.0  // 0° to 180° chord
+        let r_from_90_a = zeroToNinety / sqrt(2.0)  // 0° to 90° chord
+        let r_from_90_b = ninetyToOneEighty / sqrt(2.0)  // 90° to 180° chord
         
-        // For 180° arc, arm length = chord/2; for 90° arc, arm length = chord/√2
-        let armLength: Double
-        if maxDistance == zeroToOneEighty {
-            // 180° arc - chord length = 2R, so R = chord/2
-            armLength = maxDistance / 2.0
-        } else {
-            // 90° arc - chord length = R√2, so R = chord/√2
-            armLength = maxDistance / sqrt(2.0)
-        }
+        // Average all estimates for robustness
+        // NO GRIP OFFSET - we measure phone movement directly
+        let armLength = (r_from_180 + r_from_90_a + r_from_90_b) / 3.0
         
-        // Clamp to reasonable arm length range
-        return max(0.3, min(1.0, armLength))
+        print("🎯 [Calibration] Arm length (phone-to-shoulder): \(String(format: "%.3f", armLength))m")
+        
+        // Clamp to reasonable range (0.50m to 1.10m)
+        // Typical adult: 0.70-0.90m
+        return max(0.50, min(1.10, armLength))
+    }
+    
+    /// Validates that all calibration positions are consistent with calculated arm length
+    /// Returns variance (standard deviation) of distances from shoulder to each position
+    private func validatePositionConsistency(zeroPos: SIMD3<Double>, ninetyPos: SIMD3<Double>, oneEightyPos: SIMD3<Double>, armLength: Double) -> Double {
+        // Estimate shoulder position
+        let shoulder = estimateShoulderPosition(zeroPos: zeroPos, oneEightyPos: oneEightyPos, armLength: armLength)
+        
+        // Calculate distances from shoulder to each calibration position
+        let distZero = simd_distance(shoulder, zeroPos)
+        let distNinety = simd_distance(shoulder, ninetyPos)
+        let distOneEighty = simd_distance(shoulder, oneEightyPos)
+        
+        // All distances should be approximately equal to armLength
+        let distances = [distZero, distNinety, distOneEighty]
+        let mean = distances.reduce(0.0, +) / Double(distances.count)
+        
+        // Calculate standard deviation
+        let variance = sqrt(distances.map { pow($0 - mean, 2) }.reduce(0.0, +) / Double(distances.count))
+        
+        return variance
     }
     
     private func estimateShoulderPosition(zeroPos: SIMD3<Double>, oneEightyPos: SIMD3<Double>, armLength: Double) -> SIMD3<Double> {
-        // Shoulder is at the midpoint of the 0°-180° arc, offset by arm length
+        // NO GRIP OFFSET - armLength is directly phone-to-shoulder
+        // Multi-point triangulation: Shoulder is at distance 'armLength' from both 0° and 180° positions
+        // Using geometric constraint: shoulder lies on sphere of radius 'armLength' centered at each position
+        
+        // Calculate midpoint (approximate shoulder location)
         let midpoint = (zeroPos + oneEightyPos) / 2.0
-        let direction = simd_normalize(oneEightyPos - zeroPos)
-        let perpendicular = SIMD3<Double>(-direction.y, direction.x, direction.z) // Rotate 90° in XY plane
-        return midpoint + perpendicular * armLength * 0.5  // Offset towards body
+        
+        // Calculate direction vector from 0° to 180°
+        let arc_direction = oneEightyPos - zeroPos
+        let arc_distance = simd_length(arc_direction)
+        
+        // For 180° arc movement, chord length ≈ 2*R (where R = phone-to-shoulder distance)
+        // Shoulder offset perpendicular to arc (towards body)
+        // Using Pythagorean theorem: offset = sqrt(R² - (chord/2)²)
+        let halfChord = arc_distance / 2.0
+        let offsetDistance = sqrt(max(0.0, armLength * armLength - halfChord * halfChord))
+        
+        // Find perpendicular direction (assume movement in sagittal plane, offset towards body)
+        let normalized_arc = simd_normalize(arc_direction)
+        
+        // Cross product with up vector to get perpendicular direction
+        let up = SIMD3<Double>(0, 1, 0)
+        let perpendicular = simd_cross(normalized_arc, up)
+        let normalized_perp = simd_length(perpendicular) > 0.001 ? simd_normalize(perpendicular) : SIMD3<Double>(0, 0, -1)
+        
+        // Shoulder position: midpoint + offset towards body (negative Z direction typically)
+        let shoulder = midpoint + normalized_perp * offsetDistance
+        
+        print("🎯 [Shoulder Estimation] Arc: \(String(format: "%.3f", arc_distance))m, Offset: \(String(format: "%.3f", offsetDistance))m, Arm length: \(String(format: "%.3f", armLength))m")
+        
+        return shoulder
     }
     
     private func clearTemporaryData() {
@@ -393,6 +520,10 @@ class CalibrationDataManager: ObservableObject {
         zeroPosition = nil
         ninetyPosition = nil
         oneEightyPosition = nil
+        // Clear multi-sample arrays
+        zeroSamples.removeAll()
+        ninetySamples.removeAll()
+        oneEightySamples.removeAll()
     }
     
     // Legacy method - kept for compatibility (no-op now). Use validateAndCreateReformedCalibration instead.
@@ -520,13 +651,19 @@ class CalibrationDataManager: ObservableObject {
         do {
             let encodedData = try JSONEncoder().encode(data)
             userDefaults.set(encodedData, forKey: calibrationKey)
-            
-            DispatchQueue.main.async {
+
+            let updateState = {
                 self.currentCalibration = data
                 self.isCalibrated = true
                 self.calibrationAccuracy = data.calibrationAccuracy
             }
-            
+
+            if Thread.isMainThread {
+                updateState()
+            } else {
+                DispatchQueue.main.sync(execute: updateState)
+            }
+
             print("✅ [CalibrationManager] Anatomical calibration saved successfully - accuracy: \(String(format: "%.1f", data.calibrationAccuracy * 100))%")
             
             NotificationCenter.default.post(name: NSNotification.Name("AnatomicalCalibrationComplete"), object: nil, userInfo: ["accuracy": data.calibrationAccuracy])

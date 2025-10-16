@@ -196,7 +196,6 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     func addRomPerRep(_ value: Double) {
         // No longer append - this causes duplicate data
         // Rep detection automatically handles ROM tracking
-    FlexaLog.motion.warning("[DEPRECATED] addRomPerRep called — game view attempted direct ROM injection")
     }
     
     /// Add SPARC value to sparcHistory (for game views) - DEPRECATED  
@@ -769,8 +768,6 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
             }
             kalmanIMURepDetector.onRepDetected = { [weak self] reps, timestamp in
                 guard let self = self else { return }
-                
-                FlexaLog.motion.info("⚡️ [KalmanIMU] Rep #\(reps) detected (ultra-fast)")
                 
                 // Update rep count
                 DispatchQueue.main.async {

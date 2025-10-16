@@ -149,9 +149,9 @@ struct PreSurveyView: View {
         
         switch currentQuestion {
         case 0:
-            canProceed = surveyData.feeling >= 0  // Accept 0 as valid answer
+            canProceed = surveyData.feeling >= 1  // Must be at least 1 (scale is 1-10)
         case 1:
-            canProceed = surveyData.motivation >= 0  // Accept 0 as valid answer
+            canProceed = surveyData.motivation >= 1  // Must be at least 1 (scale is 1-10)
         default:
             canProceed = false
         }
@@ -178,6 +178,7 @@ struct SecondaryButtonStyle: ButtonStyle {
                             .fill(Color.clear)
                     )
             )
+            .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -189,7 +190,7 @@ struct SurveyData {
     var timestamp: Date = Date()
     
     var isComplete: Bool {
-        return feeling >= 0 && motivation >= 0  // Accept 0 as valid answer
+        return feeling >= 1 && motivation >= 1  // Both must be at least 1
     }
 }
 

@@ -168,25 +168,13 @@ final class HandheldROMCalculator: ObservableObject {
             let arcLength = self.calculateFinalArcLength()
             let repROM = self.calculateRepROM()
             
-            // Diagnose: Log detailed arc length analysis
-            FlexaLog.motion.info("📐 [ROM-AUDIT] Rep completed:")
-            FlexaLog.motion.info("  ├─ Arc length: \(String(format: "%.4f", arcLength))m (min: \(String(format: "%.4f", self.minArcLength))m)")
-            FlexaLog.motion.info("  ├─ Arm length: \(String(format: "%.2f", self.armLength))m")
-            FlexaLog.motion.info("  ├─ Calculated ROM: \(String(format: "%.1f", repROM))°")
-            FlexaLog.motion.info("  └─ Positions sampled: \(self.currentRepPositions.count)")
-            
-            // VALIDATE: Reject reps with arc length too small (noise-only)
+            // ROM calculation complete - silent during gameplay
             guard arcLength >= self.minArcLength else {
-                FlexaLog.motion.warning("🚫 [ROM-AUDIT] Rep REJECTED - arc too small (\(String(format: "%.4f", arcLength))m < \(String(format: "%.4f", self.minArcLength))m). Likely just phone rotation, no real arm movement.")
                 self.currentRepPositions.removeAll()
                 self.currentRepTimestamps.removeAll()
                 self.currentRepArcLength = 0.0
                 self.currentRepMaxCircularRadius = 0.0
                 return
-            }
-            
-            if repROM < 5.0 {
-                FlexaLog.motion.warning("⚠️ [ROM-AUDIT] Low ROM detected (\(String(format: "%.1f", repROM))°) - likely noise or minimal movement.")
             }
             
             DispatchQueue.main.async {
@@ -257,10 +245,6 @@ final class HandheldROMCalculator: ObservableObject {
     private func calculateROMFromArcLength(_ arcLength: Double, projectTo2D: Bool = false, bestPlane: ProjectionPlane = .xy) -> Double {
         guard armLength > 0 else { return 0.0 }
         let angle = (arcLength / armLength) * 180.0 / .pi
-        // Only log at rep end when projectTo2D is true
-        if projectTo2D {
-            FlexaLog.motion.debug("📐 [ROM] Plane: \(bestPlane) | Arc: \(String(format: "%.3f", arcLength))m | ROM: \(String(format: "%.1f", angle))°")
-        }
         return min(max(angle, 0.0), 360.0)
     }
     
@@ -285,7 +269,6 @@ final class HandheldROMCalculator: ObservableObject {
             let segmentLength = Double(distance(positions2D[i], positions2D[i-1]))
             if segmentLength >= segmentNoiseThreshold { total += segmentLength }
         }
-        FlexaLog.motion.debug("📐 [AUDIT] Arc length on plane \(plane): \(String(format: "%.3f", total))m")
         return total
     }
     

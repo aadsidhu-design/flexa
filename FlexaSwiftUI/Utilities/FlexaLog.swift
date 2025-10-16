@@ -11,7 +11,6 @@ struct FlexaLog {
 
     // Explicitly reference os.Logger to avoid ambiguity with project Logger
     static let gemini = os.Logger(subsystem: subsystem, category: "Gemini")
-    // Backend logging category for Appwrite/other backend operations.
     static let backend = os.Logger(subsystem: subsystem, category: "Backend")
     static let motion = os.Logger(subsystem: subsystem, category: "Motion")
     static let vision = os.Logger(subsystem: subsystem, category: "Vision")

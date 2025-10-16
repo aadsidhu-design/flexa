@@ -2,72 +2,78 @@
 //  IMUDirectionRepDetector.swift
 //  FlexaSwiftUI
 //
-//  Simple IMU gyroscope-based rep detection using direction changes
+//  Simple IMU accelerometer-based rep detection using direction changes
 //
 
 import Foundation
 import CoreMotion
 
-/// Detects reps based purely on IMU gyroscope direction changes
-/// No thresholds, no cooldowns - just raw direction reversals
+/// Detects reps based on accelerometer direction changes (not gyroscope)
+/// Uses actual movement direction from acceleration, more reliable than rotation
 class IMUDirectionRepDetector {
     
-    private var lastDirection: Int = 0  // -1 = left/down, 0 = neutral, 1 = right/up
+    private var lastDirection: Int = 0  // -1 or 1 for negative/positive acceleration
     private var currentReps: Int = 0
-    private var lastGyroReading: CMRotationRate?
-    private let directionChangeThreshold: Double = 0.087  // ~5 degrees/second in radians
+    private var lastAccelReading: CMAcceleration?
+    private var isInitialized: Bool = false
+    
+    // Minimum direction change threshold (in degrees)
+    // 5 degree minimum change to detect a direction reversal
+    private let directionChangeThreshold: Double = 5.0
+    
+    // Track magnitude for logging
+    private var peakPositiveAccel: Double = 0
     
     var onRepDetected: ((Int, TimeInterval) -> Void)?
     
     func reset() {
         lastDirection = 0
         currentReps = 0
-        lastGyroReading = nil
+        lastAccelReading = nil
+        isInitialized = false
+        peakPositiveAccel = 0
     }
     
-    /// Process gyroscope data and detect direction changes
-    func processGyro(_ rotationRate: CMRotationRate, timestamp: TimeInterval) {
-        // For pendulum swings (Fruit Slicer, Fan Out Flame):
-        // Use the dominant rotation axis (usually Y for side-to-side, X for forward-back)
+    /// Process accelerometer data and detect direction changes
+    /// SIMPLIFIED: Only detects direction reversals (no ROM check, no cooldown)
+    func processAcceleration(_ acceleration: CMAcceleration, timestamp: TimeInterval) {
+        // Wait for initialization period to avoid false positives at start
+        if !isInitialized {
+            isInitialized = true
+            print("🔄 [IMU-Rep] Initialized - starting rep detection with 5° threshold")
+            return
+        }
         
-        // Find dominant axis
-        let absX = abs(rotationRate.x)
-        let absY = abs(rotationRate.y)
-        let absZ = abs(rotationRate.z)
+        // Find dominant acceleration axis
+        let absX = abs(acceleration.x)
+        let absY = abs(acceleration.y)
+        let absZ = abs(acceleration.z)
         
         let dominantValue: Double
         if absX > absY && absX > absZ {
-            dominantValue = rotationRate.x
+            dominantValue = acceleration.x
         } else if absY > absX && absY > absZ {
-            dominantValue = rotationRate.y
+            dominantValue = acceleration.y
         } else {
-            dominantValue = rotationRate.z
+            dominantValue = acceleration.z
         }
         
-        // Determine current direction
-        let currentDirection: Int
-        if abs(dominantValue) < directionChangeThreshold {
-            currentDirection = 0  // Neutral/stopped
-        } else if dominantValue > 0 {
-            currentDirection = 1  // Positive direction
-        } else {
-            currentDirection = -1  // Negative direction
-        }
+        // Determine current direction: +1 or -1 (no neutral state)
+        let currentDirection: Int = dominantValue >= 0 ? 1 : -1
         
-        // Detect direction reversal (1 → -1 or -1 → 1)
-        if lastDirection != 0 && currentDirection != 0 && lastDirection != currentDirection {
-            // Direction changed! Count as a rep
+        // Track magnitude for logging
+        peakPositiveAccel = max(peakPositiveAccel, abs(dominantValue))
+        
+        // Detect direction reversal: 1 → -1 or -1 → 1
+        if lastDirection != 0 && lastDirection != currentDirection {
             currentReps += 1
             onRepDetected?(currentReps, timestamp)
             
-            print("🔄 [IMU-Rep] Direction change detected! \(lastDirection) → \(currentDirection) | Rep #\(currentReps) | Gyro: \(String(format: "%.3f", dominantValue))")
+            print("🔄 [IMU-Rep] Direction reversal detected! \(lastDirection) → \(currentDirection) | Rep #\(currentReps) | Accel: \(String(format: "%.3f", abs(dominantValue))) m/s²")
         }
         
-        // Update last direction (only if not neutral)
-        if currentDirection != 0 {
-            lastDirection = currentDirection
-        }
-        
-        lastGyroReading = rotationRate
+        // Update last direction
+        lastDirection = currentDirection
+        lastAccelReading = acceleration
     }
 }

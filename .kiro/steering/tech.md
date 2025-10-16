@@ -12,10 +12,10 @@
 - **Vision**: Pose estimation and computer vision analysis
 - **CoreMotion**: IMU sensor data (accelerometer, gyroscope)
 - **AVFoundation**: Camera capture and video processing
-- **Appwrite**: Authentication (anonymous), document database, and analytics
- Appwrite (self-hosted or cloud) used for runtime uploads and document storage
- └── Appwrite SDK / REST API - Backend document database and auth
- **BackendService (Appwrite)**: Cloud data synchronization via Appwrite with offline queueing
+- **Firebase**: Authentication (anonymous), document database, and analytics
+ Firebase (self-hosted or cloud) used for runtime uploads and document storage
+ └── Firebase SDK / REST API - Backend document database and auth
+ **BackendService (Firebase)**: Cloud data synchronization via Appwrite with offline queueing
 
 ## Services Architecture
 - **SimpleMotionService**: Central motion tracking coordinator (singleton)
@@ -25,20 +25,6 @@
 -- **AppwriteService**: Cloud data synchronization (Appwrite is the runtime backend)
 - **CalibrationDataManager**: User calibration persistence
 
-## Common Build Commands
-```bash
-# Build for iPhone 16 simulator (iOS 26) - VERIFIED WORKING
-xcodebuild -project FlexaSwiftUI.xcodeproj -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,id=A525A95A-E59D-4784-A7F6-2A3D7DE9B799' build
-
-# Build for device
-xcodebuild -project FlexaSwiftUI.xcodeproj -scheme FlexaSwiftUI -destination 'generic/platform=iOS' build
-
-# Run tests on iPhone 16 (iOS 26) - VERIFIED WORKING
-xcodebuild test -project FlexaSwiftUI.xcodeproj -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,id=A525A95A-E59D-4784-A7F6-2A3D7DE9B799'
-
-# Clean build folder
-xcodebuild clean -project FlexaSwiftUI.xcodeproj -scheme FlexaSwiftUI
-```
 
 ## Build Requirements
 - **Target Device**: iPhone 16 with iOS 26.0

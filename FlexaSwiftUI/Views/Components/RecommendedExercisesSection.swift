@@ -33,7 +33,7 @@ struct RecommendedExercisesSection: View {
     }
     
     private var recommendedGames: [GameType] {
-        let allGames = GameType.allCases.filter { $0 != .makeYourOwn }
+    let allGames = GameType.allCases.filter { ![.makeYourOwn, .fruitSlicer].contains($0) }
 
         let todaySessions = LocalDataManager.shared.getStoredSessions().filter { session in
             Calendar.current.isDateInToday(session.timestamp)

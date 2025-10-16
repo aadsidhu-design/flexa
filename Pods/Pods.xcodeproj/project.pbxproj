@@ -1,0 +1,691 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXAggregateTarget section */
+		1ABB458A7269D2AD0E6964699891EDAE /* MediaPipeTasksCommon */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = C7D69FD49084227149A53FD2178697AA /* Build configuration list for PBXAggregateTarget "MediaPipeTasksCommon" */;
+			buildPhases = (
+				3CEE41DFD7B022DE15AA24A8AF9233D7 /* [CP] Copy XCFrameworks */,
+			);
+			dependencies = (
+			);
+			name = MediaPipeTasksCommon;
+		};
+		BEDEAD5BA2B903D907AC242AF62129AB /* MediaPipeTasksVision */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 2B5D74A04949DC1F121051E3AF99A39F /* Build configuration list for PBXAggregateTarget "MediaPipeTasksVision" */;
+			buildPhases = (
+				00A449ED1CAFDAD1C2D794C996C26CA1 /* [CP] Copy XCFrameworks */,
+			);
+			dependencies = (
+				4A4D6E3D741E0C49929EA497A42FE13A /* PBXTargetDependency */,
+			);
+			name = MediaPipeTasksVision;
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXBuildFile section */
+		2842B422CEE296011E31ED38D7A6B590 /* Pods-FlexaSwiftUI-umbrella.h in Headers */ = {isa = PBXBuildFile; fileRef = 5C1F18ED869582CFD57D3586F27B8111 /* Pods-FlexaSwiftUI-umbrella.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		8B05925BA17D422719275C36BD9FB14A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 384DDA2CB25005BD6479B5987C619DD4 /* Foundation.framework */; };
+		C27214B01DC520463E25AF63A5B2B768 /* Pods-FlexaSwiftUI-dummy.m in Sources */ = {isa = PBXBuildFile; fileRef = FE72CC31E9AE12284A18A649A9170175 /* Pods-FlexaSwiftUI-dummy.m */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1E29E4C385732950FD5CE7EDFDA1D709 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BFDFE7DC352907FC980B868725387E98 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1ABB458A7269D2AD0E6964699891EDAE;
+			remoteInfo = MediaPipeTasksCommon;
+		};
+		2A561418C9FC927599EE047A5ABD057F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BFDFE7DC352907FC980B868725387E98 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BEDEAD5BA2B903D907AC242AF62129AB;
+			remoteInfo = MediaPipeTasksVision;
+		};
+		3BE76F786643FCCFDDA9643626BF0A7C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BFDFE7DC352907FC980B868725387E98 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1ABB458A7269D2AD0E6964699891EDAE;
+			remoteInfo = MediaPipeTasksCommon;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		13D8AD731ED26B5E4F09075E07E8B108 /* MediaPipeTasksVision.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; name = MediaPipeTasksVision.xcframework; path = frameworks/MediaPipeTasksVision.xcframework; sourceTree = "<group>"; };
+		155B7218E918A7D75CDF01EE962046FD /* Pods-FlexaSwiftUI */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; name = "Pods-FlexaSwiftUI"; path = Pods_FlexaSwiftUI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		16E363A0DBC842617A38CDABA1DBF3B7 /* MediaPipeTasksCommon.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = MediaPipeTasksCommon.release.xcconfig; sourceTree = "<group>"; };
+		22B730A8B5E53D05DD052FF663F0592B /* MediaPipeTasksVision-xcframeworks.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "MediaPipeTasksVision-xcframeworks.sh"; sourceTree = "<group>"; };
+		384DDA2CB25005BD6479B5987C619DD4 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		4177DF72BC04891E56D56C7818E1A83E /* Pods-FlexaSwiftUI.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-FlexaSwiftUI.release.xcconfig"; sourceTree = "<group>"; };
+		55826D6B7C0D6255003FDD73F275A8AA /* MediaPipeTasksVision.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = MediaPipeTasksVision.debug.xcconfig; sourceTree = "<group>"; };
+		5C1F18ED869582CFD57D3586F27B8111 /* Pods-FlexaSwiftUI-umbrella.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "Pods-FlexaSwiftUI-umbrella.h"; sourceTree = "<group>"; };
+		76305144D23030FF9D1312244B417012 /* MediaPipeTasksCommon.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = MediaPipeTasksCommon.debug.xcconfig; sourceTree = "<group>"; };
+		818C805B6836EB23C26BF2DA3697B083 /* Pods-FlexaSwiftUI.modulemap */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.module; path = "Pods-FlexaSwiftUI.modulemap"; sourceTree = "<group>"; };
+		8C8B0ABDA3DA84EB49049D8C2FC43A1C /* Pods-FlexaSwiftUI-acknowledgements.markdown */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = "Pods-FlexaSwiftUI-acknowledgements.markdown"; sourceTree = "<group>"; };
+		8FEA4493E63F2584A3A11FF18B3019D8 /* MediaPipeTasksCommon-xcframeworks.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = "MediaPipeTasksCommon-xcframeworks.sh"; sourceTree = "<group>"; };
+		9432B582D9DB0F89183EFD238B7EEE91 /* Pods-FlexaSwiftUI-acknowledgements.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Pods-FlexaSwiftUI-acknowledgements.plist"; sourceTree = "<group>"; };
+		9D940727FF8FB9C785EB98E56350EF41 /* Podfile */ = {isa = PBXFileReference; explicitFileType = text.script.ruby; includeInIndex = 1; indentWidth = 2; lastKnownFileType = text; name = Podfile; path = ../Podfile; sourceTree = SOURCE_ROOT; tabWidth = 2; xcLanguageSpecificationIdentifier = xcode.lang.ruby; };
+		A07B56179CB15A08C21382C40A08853D /* MediaPipeTasksCommon.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; name = MediaPipeTasksCommon.xcframework; path = frameworks/MediaPipeTasksCommon.xcframework; sourceTree = "<group>"; };
+		DB47646D5B664570D3ABAB79831ED494 /* Pods-FlexaSwiftUI-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Pods-FlexaSwiftUI-Info.plist"; sourceTree = "<group>"; };
+		E964D9CEC112AA756993F1DEE1DAF865 /* Pods-FlexaSwiftUI.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Pods-FlexaSwiftUI.debug.xcconfig"; sourceTree = "<group>"; };
+		ED84203296EA7FC41963F7C6505D4712 /* MediaPipeTasksVision.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = MediaPipeTasksVision.release.xcconfig; sourceTree = "<group>"; };
+		FE72CC31E9AE12284A18A649A9170175 /* Pods-FlexaSwiftUI-dummy.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = "Pods-FlexaSwiftUI-dummy.m"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		103010A70D9501F159A48466DC6F0035 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8B05925BA17D422719275C36BD9FB14A /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		424805F80F1BD2F53ADBDC00433D563B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A07B56179CB15A08C21382C40A08853D /* MediaPipeTasksCommon.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		52A5C95B555BF3CE4BAECB93961B4C68 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				97E223EFAD89847830996F5BFE12C4F9 /* MediaPipeTasksCommon */,
+				FE2052104DCC7B302F3A37D03411DF73 /* MediaPipeTasksVision */,
+			);
+			name = Pods;
+			sourceTree = "<group>";
+		};
+		61DAA63530A40B5BD57BD526450D859E /* Targets Support Files */ = {
+			isa = PBXGroup;
+			children = (
+				AE7980B2991483D260C2CC1F60D545A2 /* Pods-FlexaSwiftUI */,
+			);
+			name = "Targets Support Files";
+			sourceTree = "<group>";
+		};
+		97E223EFAD89847830996F5BFE12C4F9 /* MediaPipeTasksCommon */ = {
+			isa = PBXGroup;
+			children = (
+				424805F80F1BD2F53ADBDC00433D563B /* Frameworks */,
+				E814A4465071D85D500709A82E81B81F /* Support Files */,
+			);
+			name = MediaPipeTasksCommon;
+			path = MediaPipeTasksCommon;
+			sourceTree = "<group>";
+		};
+		AE7980B2991483D260C2CC1F60D545A2 /* Pods-FlexaSwiftUI */ = {
+			isa = PBXGroup;
+			children = (
+				818C805B6836EB23C26BF2DA3697B083 /* Pods-FlexaSwiftUI.modulemap */,
+				8C8B0ABDA3DA84EB49049D8C2FC43A1C /* Pods-FlexaSwiftUI-acknowledgements.markdown */,
+				9432B582D9DB0F89183EFD238B7EEE91 /* Pods-FlexaSwiftUI-acknowledgements.plist */,
+				FE72CC31E9AE12284A18A649A9170175 /* Pods-FlexaSwiftUI-dummy.m */,
+				DB47646D5B664570D3ABAB79831ED494 /* Pods-FlexaSwiftUI-Info.plist */,
+				5C1F18ED869582CFD57D3586F27B8111 /* Pods-FlexaSwiftUI-umbrella.h */,
+				E964D9CEC112AA756993F1DEE1DAF865 /* Pods-FlexaSwiftUI.debug.xcconfig */,
+				4177DF72BC04891E56D56C7818E1A83E /* Pods-FlexaSwiftUI.release.xcconfig */,
+			);
+			name = "Pods-FlexaSwiftUI";
+			path = "Target Support Files/Pods-FlexaSwiftUI";
+			sourceTree = "<group>";
+		};
+		C4245415B570FC82185046D6CA346BB0 /* Support Files */ = {
+			isa = PBXGroup;
+			children = (
+				22B730A8B5E53D05DD052FF663F0592B /* MediaPipeTasksVision-xcframeworks.sh */,
+				55826D6B7C0D6255003FDD73F275A8AA /* MediaPipeTasksVision.debug.xcconfig */,
+				ED84203296EA7FC41963F7C6505D4712 /* MediaPipeTasksVision.release.xcconfig */,
+			);
+			name = "Support Files";
+			path = "../Target Support Files/MediaPipeTasksVision";
+			sourceTree = "<group>";
+		};
+		CC717C45633E313BDC42C9CFA84C900E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				155B7218E918A7D75CDF01EE962046FD /* Pods-FlexaSwiftUI */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CF1408CF629C7361332E53B88F7BD30C = {
+			isa = PBXGroup;
+			children = (
+				9D940727FF8FB9C785EB98E56350EF41 /* Podfile */,
+				D210D550F4EA176C3123ED886F8F87F5 /* Frameworks */,
+				52A5C95B555BF3CE4BAECB93961B4C68 /* Pods */,
+				CC717C45633E313BDC42C9CFA84C900E /* Products */,
+				61DAA63530A40B5BD57BD526450D859E /* Targets Support Files */,
+			);
+			sourceTree = "<group>";
+		};
+		D210D550F4EA176C3123ED886F8F87F5 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				E4801F62A6B08CD9B5410329F1A18FDE /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E4801F62A6B08CD9B5410329F1A18FDE /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				384DDA2CB25005BD6479B5987C619DD4 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		E814A4465071D85D500709A82E81B81F /* Support Files */ = {
+			isa = PBXGroup;
+			children = (
+				8FEA4493E63F2584A3A11FF18B3019D8 /* MediaPipeTasksCommon-xcframeworks.sh */,
+				76305144D23030FF9D1312244B417012 /* MediaPipeTasksCommon.debug.xcconfig */,
+				16E363A0DBC842617A38CDABA1DBF3B7 /* MediaPipeTasksCommon.release.xcconfig */,
+			);
+			name = "Support Files";
+			path = "../Target Support Files/MediaPipeTasksCommon";
+			sourceTree = "<group>";
+		};
+		FD2B7D76E6BD98717717FB4A6FF27CC6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				13D8AD731ED26B5E4F09075E07E8B108 /* MediaPipeTasksVision.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		FE2052104DCC7B302F3A37D03411DF73 /* MediaPipeTasksVision */ = {
+			isa = PBXGroup;
+			children = (
+				FD2B7D76E6BD98717717FB4A6FF27CC6 /* Frameworks */,
+				C4245415B570FC82185046D6CA346BB0 /* Support Files */,
+			);
+			name = MediaPipeTasksVision;
+			path = MediaPipeTasksVision;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		E092744152C1C7D3C93BD1FB032F2534 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2842B422CEE296011E31ED38D7A6B590 /* Pods-FlexaSwiftUI-umbrella.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		6859822239B354867406E0DAE3D138B5 /* Pods-FlexaSwiftUI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E902F0C96CA0492C84571D5163799BE /* Build configuration list for PBXNativeTarget "Pods-FlexaSwiftUI" */;
+			buildPhases = (
+				E092744152C1C7D3C93BD1FB032F2534 /* Headers */,
+				188CB3AC015D37BBE66CBAFC38E1148A /* Sources */,
+				103010A70D9501F159A48466DC6F0035 /* Frameworks */,
+				730715213022790B6A4E14D6768A17FB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8487F3F5A99EBF7DD64CB0E03FD99DDA /* PBXTargetDependency */,
+				374485D2493CC94F2E08B0BFE8324BCF /* PBXTargetDependency */,
+			);
+			name = "Pods-FlexaSwiftUI";
+			productName = Pods_FlexaSwiftUI;
+			productReference = 155B7218E918A7D75CDF01EE962046FD /* Pods-FlexaSwiftUI */;
+			productType = "com.apple.product-type.framework";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BFDFE7DC352907FC980B868725387E98 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 4821239608C13582E20E6DA73FD5F1F9 /* Build configuration list for PBXProject "Pods" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = CF1408CF629C7361332E53B88F7BD30C;
+			minimizedProjectReferenceProxies = 0;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = CC717C45633E313BDC42C9CFA84C900E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1ABB458A7269D2AD0E6964699891EDAE /* MediaPipeTasksCommon */,
+				BEDEAD5BA2B903D907AC242AF62129AB /* MediaPipeTasksVision */,
+				6859822239B354867406E0DAE3D138B5 /* Pods-FlexaSwiftUI */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		730715213022790B6A4E14D6768A17FB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		00A449ED1CAFDAD1C2D794C996C26CA1 /* [CP] Copy XCFrameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/MediaPipeTasksVision/MediaPipeTasksVision-xcframeworks-input-files.xcfilelist",
+			);
+			name = "[CP] Copy XCFrameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/MediaPipeTasksVision/MediaPipeTasksVision-xcframeworks-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/MediaPipeTasksVision/MediaPipeTasksVision-xcframeworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		3CEE41DFD7B022DE15AA24A8AF9233D7 /* [CP] Copy XCFrameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/MediaPipeTasksCommon/MediaPipeTasksCommon-xcframeworks-input-files.xcfilelist",
+			);
+			name = "[CP] Copy XCFrameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/MediaPipeTasksCommon/MediaPipeTasksCommon-xcframeworks-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/MediaPipeTasksCommon/MediaPipeTasksCommon-xcframeworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		188CB3AC015D37BBE66CBAFC38E1148A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C27214B01DC520463E25AF63A5B2B768 /* Pods-FlexaSwiftUI-dummy.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		374485D2493CC94F2E08B0BFE8324BCF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = MediaPipeTasksVision;
+			target = BEDEAD5BA2B903D907AC242AF62129AB /* MediaPipeTasksVision */;
+			targetProxy = 2A561418C9FC927599EE047A5ABD057F /* PBXContainerItemProxy */;
+		};
+		4A4D6E3D741E0C49929EA497A42FE13A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = MediaPipeTasksCommon;
+			target = 1ABB458A7269D2AD0E6964699891EDAE /* MediaPipeTasksCommon */;
+			targetProxy = 1E29E4C385732950FD5CE7EDFDA1D709 /* PBXContainerItemProxy */;
+		};
+		8487F3F5A99EBF7DD64CB0E03FD99DDA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = MediaPipeTasksCommon;
+			target = 1ABB458A7269D2AD0E6964699891EDAE /* MediaPipeTasksCommon */;
+			targetProxy = 3BE76F786643FCCFDDA9643626BF0A7C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		27B8F3B63A252EB461A09A408278A90B /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4177DF72BC04891E56D56C7818E1A83E /* Pods-FlexaSwiftUI.release.xcconfig */;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				"CODE_SIGN_IDENTITY[sdk=appletvos*]" = "";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";
+				"CODE_SIGN_IDENTITY[sdk=watchos*]" = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				INFOPLIST_FILE = "Target Support Files/Pods-FlexaSwiftUI/Pods-FlexaSwiftUI-Info.plist";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACH_O_TYPE = staticlib;
+				MODULEMAP_FILE = "Target Support Files/Pods-FlexaSwiftUI/Pods-FlexaSwiftUI.modulemap";
+				OTHER_LDFLAGS = "";
+				OTHER_LIBTOOLFLAGS = "";
+				PODS_ROOT = "$(SRCROOT)";
+				PRODUCT_BUNDLE_IDENTIFIER = "org.cocoapods.${PRODUCT_NAME:rfc1034identifier}";
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		30E0B9EFD9A5C45D0D351231E81B30B3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"POD_CONFIGURATION_RELEASE=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRIP_INSTALLED_PRODUCT = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				SYMROOT = "${SRCROOT}/../build";
+			};
+			name = Release;
+		};
+		4C1C8B86E5115E17AFAAF7C44B760E12 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = E964D9CEC112AA756993F1DEE1DAF865 /* Pods-FlexaSwiftUI.debug.xcconfig */;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				"CODE_SIGN_IDENTITY[sdk=appletvos*]" = "";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";
+				"CODE_SIGN_IDENTITY[sdk=watchos*]" = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				INFOPLIST_FILE = "Target Support Files/Pods-FlexaSwiftUI/Pods-FlexaSwiftUI-Info.plist";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACH_O_TYPE = staticlib;
+				MODULEMAP_FILE = "Target Support Files/Pods-FlexaSwiftUI/Pods-FlexaSwiftUI.modulemap";
+				OTHER_LDFLAGS = "";
+				OTHER_LIBTOOLFLAGS = "";
+				PODS_ROOT = "$(SRCROOT)";
+				PRODUCT_BUNDLE_IDENTIFIER = "org.cocoapods.${PRODUCT_NAME:rfc1034identifier}";
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		A4942E5B9FF1FA7B8950A38BDFA5540C /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = ED84203296EA7FC41963F7C6505D4712 /* MediaPipeTasksVision.release.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		B067C0D47F862A7C70034357648FD553 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 16E363A0DBC842617A38CDABA1DBF3B7 /* MediaPipeTasksCommon.release.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C38B390ADADB7802D0BC591A3D6EAA28 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 76305144D23030FF9D1312244B417012 /* MediaPipeTasksCommon.debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EB9907707CF981AF5913677BC7571799 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 55826D6B7C0D6255003FDD73F275A8AA /* MediaPipeTasksVision.debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F4FF6A0D1970CA9705974E3CB2134802 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"POD_CONFIGURATION_DEBUG=1",
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRIP_INSTALLED_PRODUCT = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				SYMROOT = "${SRCROOT}/../build";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2B5D74A04949DC1F121051E3AF99A39F /* Build configuration list for PBXAggregateTarget "MediaPipeTasksVision" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB9907707CF981AF5913677BC7571799 /* Debug */,
+				A4942E5B9FF1FA7B8950A38BDFA5540C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3E902F0C96CA0492C84571D5163799BE /* Build configuration list for PBXNativeTarget "Pods-FlexaSwiftUI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4C1C8B86E5115E17AFAAF7C44B760E12 /* Debug */,
+				27B8F3B63A252EB461A09A408278A90B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4821239608C13582E20E6DA73FD5F1F9 /* Build configuration list for PBXProject "Pods" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F4FF6A0D1970CA9705974E3CB2134802 /* Debug */,
+				30E0B9EFD9A5C45D0D351231E81B30B3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C7D69FD49084227149A53FD2178697AA /* Build configuration list for PBXAggregateTarget "MediaPipeTasksCommon" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C38B390ADADB7802D0BC591A3D6EAA28 /* Debug */,
+				B067C0D47F862A7C70034357648FD553 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = BFDFE7DC352907FC980B868725387E98 /* Project object */;
+}

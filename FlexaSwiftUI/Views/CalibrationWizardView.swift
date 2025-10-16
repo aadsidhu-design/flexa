@@ -19,12 +19,22 @@ struct CalibrationWizardView: View {
     @State private var quickReachCaptured: Bool = false
     @State private var quickPreview: Double? = nil
     // Auto-capture state
-    private enum AutoStage { case waitingChest, waitingReach, applying, done }
-    @State private var autoStage: AutoStage = .waitingChest
+    private enum AutoStage { case waitingARKit, waitingChest, waitingReach, applying, done }
+    @State private var autoStage: AutoStage = .waitingARKit
     @State private var autoTimer: Timer? = nil
     @State private var positionBuffer: [SIMD3<Double>] = []
     @State private var chestSIMD: SIMD3<Double>? = nil
     @State private var lastAutoCaptureTime: Date = .distantPast
+    
+    // Multi-sample collection (3-5 samples per position)
+    @State private var chestSamples: [SIMD3<Double>] = []
+    @State private var reachSamples: [SIMD3<Double>] = []
+    private let samplesPerPosition = 1  // Single capture per position for quicker flow
+    private let maxSampleVariance = 0.08 // Relaxed to 8cm (ARKit can be noisy)
+    
+    // ARKit initialization tracking
+    @State private var arkitReady: Bool = false
+    @State private var arkitInitStartTime: Date = .distantPast
     
     var body: some View {
         ZStack {
@@ -47,8 +57,8 @@ struct CalibrationWizardView: View {
                     }
                     Spacer()
                     Button(action: { 
-                        // Stop ARKit engine when finishing calibration
-                        motionService.universal3DEngine.stop()
+                        // Stop ARKit tracker when finishing calibration
+                        motionService.deactivateInstantARKitTracking(source: "CalibrationWizard.done")
                         dismiss() 
                     }) {
                         Text("Done")
@@ -77,12 +87,26 @@ struct CalibrationWizardView: View {
             }
         }
         .onAppear {
-            // Ensure ARKit position tracking is running during calibration
-            // Start Universal3D engine directly (no CoreMotion)
-            let convertedGameType = Universal3DROMEngine.convertGameType(.testROM)
-            motionService.universal3DEngine.startDataCollection(gameType: convertedGameType)
+            FlexaLog.motion.info("🎯 [Calibration] Starting wizard")
+            
+            // Reset state
+            autoStage = .waitingARKit
+            arkitReady = false
+            arkitInitStartTime = Date()
             CalibrationDataManager.shared.clearQuickArmLength()
-            startAutoCapture()
+            
+            // Start ARKit with delay to ensure proper initialization
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                FlexaLog.motion.info("🎯 [Calibration] Starting ARKit tracker")
+                motionService.activateInstantARKitTracking(source: "CalibrationWizard")
+                
+                // Start auto-capture after ARKit initializes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    FlexaLog.motion.info("🎯 [Calibration] Starting auto-capture timer")
+                    startAutoCapture()
+                }
+            }
+            
             // Prefill manual segment lengths from current calibration if available, else defaults
             if let cal = CalibrationDataManager.shared.currentCalibration {
                 armLengthField = String(format: "%.2f", cal.armLength)
@@ -98,8 +122,8 @@ struct CalibrationWizardView: View {
         }
         .onDisappear { 
             stopAutoCapture()
-            // Defensive: stop ARKit engine on exit
-            motionService.universal3DEngine.stop()
+            // Defensive: stop ARKit tracker on exit
+            motionService.deactivateInstantARKitTracking(source: "CalibrationWizard.onDisappear")
         }
     }
     
@@ -127,7 +151,6 @@ struct CalibrationWizardView: View {
     private func quickApply() {
         if let measured = CalibrationDataManager.shared.applyQuickArmLength() {
             armLengthField = String(format: "%.2f", measured)
-            HapticFeedbackService.shared.successHaptic()
             // Mark user as calibrated
             UserDefaults.standard.set(true, forKey: "hasCompletedROMCalibration")
             NotificationCenter.default.post(name: Notification.Name("CalibrationCompleted"), object: nil)
@@ -138,14 +161,21 @@ struct CalibrationWizardView: View {
     // MARK: - Auto-capture engine
     private func startAutoCapture() {
         stopAutoCapture()
-        autoStage = .waitingChest
+        
+        FlexaLog.motion.info("🎯 [Calibration] Auto-capture started")
+        
+        // Clear all state
         positionBuffer.removeAll()
+        chestSamples.removeAll()
+        reachSamples.removeAll()
         quickChestCaptured = false
         quickReachCaptured = false
         chestSIMD = nil
         quickPreview = nil
         lastAutoCaptureTime = .distantPast
-        autoTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+        
+        // Start timer at 30fps (less aggressive than 60fps)
+        autoTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
             autoTick()
         }
         RunLoop.main.add(autoTimer!, forMode: .common)
@@ -156,6 +186,8 @@ struct CalibrationWizardView: View {
     }
     private func statusLine() -> String {
         switch autoStage {
+        case .waitingARKit:
+            return "Initializing ARKit tracking..."
         case .waitingChest:
             return "Step 1/2: Hold still at CHEST — capturing…"
         case .waitingReach:
@@ -170,21 +202,44 @@ struct CalibrationWizardView: View {
     // Minimal, text-only prompt for capture (no other UI while capturing)
     private func minimalPromptText() -> String {
         switch autoStage {
+        case .waitingARKit:
+            let elapsed = Date().timeIntervalSince(arkitInitStartTime)
+            return "Initializing camera tracking...\n\(Int(max(0, 3 - elapsed)))s"
         case .waitingChest:
-            return "Hold phone at your chest\nKeep still until it vibrates"
+            if chestSamples.isEmpty {
+                return "Hold phone at your chest\nKeep steady and still"
+            } else {
+                let progress = "\(chestSamples.count)/\(samplesPerPosition)"
+                return "Hold phone at your chest\nCapturing... \(progress)"
+            }
         case .waitingReach:
-            return "Hold phone straight in front of you\nKeep still until it vibrates"
+            if reachSamples.isEmpty {
+                return "Extend arm straight forward\nKeep steady and still"
+            } else {
+                let progress = "\(reachSamples.count)/\(samplesPerPosition)"
+                return "Extend arm straight forward\nCapturing... \(progress)"
+            }
         case .applying:
-            return "Saving measurement…"
+            return "Calculating arm length..."
         case .done:
-            return "Arm length saved"
+            return "Calibration complete!"
         }
     }
     private func currentARPosition() -> SIMD3<Double>? {
-        if let tr = motionService.universal3DEngine.currentTransform {
-            return SIMD3<Double>(Double(tr.columns.3.x), Double(tr.columns.3.y), Double(tr.columns.3.z))
+        guard let tr = motionService.currentARKitTransform else {
+            return nil
         }
-        return nil
+        
+        let pos = SIMD3<Double>(Double(tr.columns.3.x), Double(tr.columns.3.y), Double(tr.columns.3.z))
+        
+        // Sanity check: ARKit positions should be within reasonable bounds (±5m from origin)
+        let magnitude = simd_length(pos)
+        guard magnitude < 5.0 else {
+            FlexaLog.motion.warning("🎯 [Calibration] Invalid ARKit position: \(pos) (magnitude=\(magnitude)m)")
+            return nil
+        }
+        
+        return pos
     }
     private func bufferStable(_ buf: [SIMD3<Double>], tol: Double) -> Bool {
         guard !buf.isEmpty else { return false }
@@ -197,44 +252,156 @@ struct CalibrationWizardView: View {
         return rms < tol
     }
     private func autoTick() {
-        guard let pos = currentARPosition(), !completed else { return }
-        // Maintain buffer
-        positionBuffer.append(pos)
-        if positionBuffer.count > 45 { positionBuffer.removeFirst(positionBuffer.count - 45) }
+        guard !completed else { return }
+        
         let now = Date()
+        
         switch autoStage {
+        case .waitingARKit:
+            // Wait for ARKit to initialize (check for valid position)
+            if currentARPosition() != nil {
+                let initTime = now.timeIntervalSince(arkitInitStartTime)
+                
+                // Require at least 3 seconds of ARKit tracking before starting
+                if initTime >= 3.0 {
+                    FlexaLog.motion.info("🎯 [Calibration] ARKit ready, switching to chest capture")
+                    arkitReady = true
+                    autoStage = .waitingChest
+                    positionBuffer.removeAll()
+                    // Removed pre-stage haptic — vibrate only when chest/reach complete
+                }
+            } else {
+                // ARKit not ready yet, wait longer
+                if now.timeIntervalSince(arkitInitStartTime) > 10.0 {
+                    FlexaLog.motion.error("🎯 [Calibration] ARKit failed to initialize after 10s")
+                    // Could show error UI here
+                }
+            }
+            
         case .waitingChest:
-            if positionBuffer.count >= 24 && bufferStable(Array(positionBuffer.suffix(24)), tol: 0.004) {
-                if now.timeIntervalSince(lastAutoCaptureTime) > 0.5 {
-                    CalibrationDataManager.shared.captureQuickArmLength(.chest)
-                    chestSIMD = positionBuffer.suffix(24).reduce(SIMD3<Double>(0,0,0), +) / 24.0
-                    quickChestCaptured = true
-                    HapticFeedbackService.shared.successHaptic()
+            guard let pos = currentARPosition() else {
+                FlexaLog.motion.warning("🎯 [Calibration] Lost ARKit position in chest stage")
+                return
+            }
+            
+            // Maintain buffer
+            positionBuffer.append(pos)
+            if positionBuffer.count > 60 { positionBuffer.removeFirst(positionBuffer.count - 60) }
+            
+            // Need sufficient buffer and stability before capturing
+            if positionBuffer.count >= 30 && bufferStable(Array(positionBuffer.suffix(30)), tol: 0.006) {
+                if now.timeIntervalSince(lastAutoCaptureTime) > 1.0 {
+                    // Collect sample from stable buffer
+                    let sample = positionBuffer.suffix(30).reduce(SIMD3<Double>(0,0,0), +) / 30.0
+                    chestSamples.append(sample)
                     lastAutoCaptureTime = now
-                    autoStage = .waitingReach
+                    
+                    FlexaLog.motion.info("🎯 [Calibration] Chest sample \(chestSamples.count)/\(samplesPerPosition) captured")
+                    
+                    // After collecting enough samples, validate and average
+                    if chestSamples.count >= samplesPerPosition {
+                        if let avgChest = validateAndAverageSamples(chestSamples) {
+                            CalibrationDataManager.shared.captureQuickArmLength(.chest)
+                            chestSIMD = avgChest
+                            quickChestCaptured = true
+                            HapticFeedbackService.shared.successHaptic()
+                            autoStage = .waitingReach
+                            positionBuffer.removeAll() // Clear buffer for next stage
+                            FlexaLog.motion.info("🎯 [Calibration] Chest position saved, moving to reach")
+                        } else {
+                            // Samples too noisy, retry
+                            FlexaLog.motion.warning("🎯 [Calibration] Chest samples variance >8cm, retrying")
+                            chestSamples.removeAll()
+                            HapticFeedbackService.shared.errorHaptic()
+                        }
+                    }
                 }
             }
+            
         case .waitingReach:
-            guard let chest = chestSIMD else { break }
-            let recent = Array(positionBuffer.suffix(20))
-            let stable = bufferStable(recent, tol: 0.006)
+            guard let chest = chestSIMD else {
+                FlexaLog.motion.error("🎯 [Calibration] No chest position in reach stage")
+                autoStage = .waitingChest
+                return
+            }
+            
+            guard let pos = currentARPosition() else {
+                FlexaLog.motion.warning("🎯 [Calibration] Lost ARKit position in reach stage")
+                return
+            }
+            
+            // Maintain buffer
+            positionBuffer.append(pos)
+            if positionBuffer.count > 60 { positionBuffer.removeFirst(positionBuffer.count - 60) }
+            
+            let recent = Array(positionBuffer.suffix(30))
+            let stable = bufferStable(recent, tol: 0.008)
             let dist = simd_distance(pos, chest)
-            if dist > 0.28 && stable {
-                if now.timeIntervalSince(lastAutoCaptureTime) > 0.5 {
-                    CalibrationDataManager.shared.captureQuickArmLength(.reach)
-                    quickReachCaptured = true
-                    quickPreview = CalibrationDataManager.shared.previewQuickArmLength()
-                    HapticFeedbackService.shared.successHaptic()
+            
+            // Require at least 25cm distance from chest (arm extended)
+            if dist > 0.25 && stable && positionBuffer.count >= 30 {
+                if now.timeIntervalSince(lastAutoCaptureTime) > 1.0 {
+                    // Collect sample from stable buffer
+                    let sample = positionBuffer.suffix(30).reduce(SIMD3<Double>(0,0,0), +) / 30.0
+                    reachSamples.append(sample)
                     lastAutoCaptureTime = now
-                    autoStage = .applying
+                    
+                    FlexaLog.motion.info("🎯 [Calibration] Reach sample \(reachSamples.count)/\(samplesPerPosition) captured (dist=\(String(format: "%.2f", dist))m)")
+                    
+                    // After collecting enough samples, validate and average
+                    if reachSamples.count >= samplesPerPosition {
+                        if let _ = validateAndAverageSamples(reachSamples) {
+                            CalibrationDataManager.shared.captureQuickArmLength(.reach)
+                            quickReachCaptured = true
+                            quickPreview = CalibrationDataManager.shared.previewQuickArmLength()
+                            HapticFeedbackService.shared.successHaptic()
+                            autoStage = .applying
+                            FlexaLog.motion.info("🎯 [Calibration] Reach position saved, applying calibration")
+                        } else {
+                            // Samples too noisy, retry
+                            FlexaLog.motion.warning("🎯 [Calibration] Reach samples variance >8cm, retrying")
+                            reachSamples.removeAll()
+                            HapticFeedbackService.shared.errorHaptic()
+                        }
+                    }
                 }
             }
+            
         case .applying:
+            FlexaLog.motion.info("🎯 [Calibration] Applying arm length measurement")
             quickApply()
             autoStage = .done
+            
         case .done:
+            FlexaLog.motion.info("🎯 [Calibration] Complete, stopping timer")
             stopAutoCapture()
         }
+    }
+    
+    /// Validates samples have <8cm variance, returns averaged position
+    private func validateAndAverageSamples(_ samples: [SIMD3<Double>]) -> SIMD3<Double>? {
+        if samples.count == 1 {
+            let single = samples[0]
+            FlexaLog.motion.info("🎯 [Calibration] Single-sample capture accepted")
+            return single
+        }
+        
+        // Calculate mean position
+        let mean = samples.reduce(SIMD3<Double>(0,0,0), +) / Double(samples.count)
+        
+        // Calculate variance (max distance from mean)
+        let maxVariance = samples.map { simd_distance($0, mean) }.max() ?? 0.0
+        
+        FlexaLog.motion.info("🎯 [Calibration] Sample validation: count=\(samples.count), variance=\(String(format: "%.3f", maxVariance))m (threshold=\(String(format: "%.3f", maxSampleVariance))m)")
+        
+        // Reject if variance exceeds threshold (8cm is reasonable for handheld ARKit)
+        if maxVariance >= maxSampleVariance {
+            FlexaLog.motion.warning("🎯 [Calibration] Variance too high: \(String(format: "%.3f", maxVariance))m > \(String(format: "%.3f", maxSampleVariance))m")
+            return nil
+        }
+        
+        FlexaLog.motion.info("🎯 [Calibration] Samples validated successfully, mean position: \(mean)")
+        return mean
     }
 
 }

@@ -35,6 +35,7 @@ struct AnalyzingView: View {
                 .onAppear {
                     // Stop all motion services during analysis
                     motionService.stopSession()
+                    motionService.stopCamera(tearDownCompletely: true)
                 }
             
             // Always show loading view - no internal results screen
@@ -114,17 +115,19 @@ struct AnalyzingView: View {
         try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
         print("📊 [AnalyzingView] Raw data processed")
         
-        // Step 2: Analyze Universal3D ROM data (for handheld games)
+    // Step 2: Handheld ROM is already computed live via the instant ARKit pipeline
+    // Data is already in SimpleMotionService.romPerRep and romHistory
         await MainActor.run { updateProgress(1, "Analyzing movement patterns...") }
-        let romAnalysis = motionService.universal3DEngine.analyzeMovementPattern()
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-        print("📊 [AnalyzingView] ROM analysis completed - Pattern: \(romAnalysis.pattern), Reps: \(romAnalysis.totalReps)")
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        print("📊 [AnalyzingView] Using LIVE-calculated ROM data (no post-processing)")
         
         // Step 3: Calculate comprehensive metrics
         await MainActor.run { updateProgress(2, "Calculating comprehensive metrics...") }
-        let enhancedData = await calculateComprehensiveMetrics(romAnalysis: romAnalysis)
-        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+        let enhancedData = await calculateComprehensiveMetrics()
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
         print("📊 [AnalyzingView] Metrics calculated - ROM: \(enhancedData.maxROM)°, SPARC: \(enhancedData.sparcScore)")
+        print("📊 [AnalyzingView] ROM History: \(enhancedData.romHistory.count) values")
+        print("📊 [AnalyzingView] ROM per Rep: \(enhancedData.romHistory.map { String(format: "%.1f", $0) }.joined(separator: ", "))°")
         
         // Step 4: Generate AI analysis (this is the slow part)
         await MainActor.run { updateProgress(3, "Generating AI analysis with Gemini...") }
@@ -162,96 +165,115 @@ struct AnalyzingView: View {
         }
     }
     
-    private func analyzeUniversal3DROMData() -> MovementAnalysisResult {
-        // Check if this is a handheld game that uses Universal3D ROM
+    // ❌ REMOVED: Legacy Universal3DROMEngine post-processing
+    // No longer needed! ROM is calculated LIVE during gameplay
+    // Data is already in SimpleMotionService.romPerRep/romHistory
+    
+    @MainActor
+    private func calculateComprehensiveMetrics() async -> ExerciseSessionData {
+    // ✅ CRITICAL FIX: Use LIVE-calculated ROM data from SimpleMotionService
+    // ROM is calculated during gameplay by HandheldROMCalculator + InstantARKit tracking
+    // and stored in SimpleMotionService.romPerRep / romHistory
+        // NO post-processing needed - data is already accurate!
+        
         let isHandheldGame = !motionService.isCameraExercise
         
+        // NEW: Calculate SPARC from ARKit position trajectory for handheld games
+        var arkitSPARCResult: ARKitSPARCAnalyzer.SPARCResult?
         if isHandheldGame {
-            // Analyze the collected 3D movement data
-                let analysis = motionService.universal3DEngine.analyzeMovementPattern()
-                let repTimestamps = analysis.repTimestamps
+            let positions = motionService.arkitPositions
+            let timestamps = motionService.arkitPositionTimestampsDates
             
-            // Clear the collected data after analysis
-            motionService.universal3DEngine.clearCollectedData()
-            
-            print("📱 [AnalyzingView] Universal3D ROM Analysis:")
-            print("   Pattern: \(analysis.pattern)")
-            print("   Total Reps: \(analysis.totalReps)")
-            print("   Average ROM: \(String(format: "%.1f", analysis.avgROM))°")
-            print("   Max ROM: \(String(format: "%.1f", analysis.maxROM))°")
-            print("   ROM per Rep: \(analysis.romPerRep.map { String(format: "%.1f", $0) }.joined(separator: ", "))°")
-                print("   Rep Timestamps: \(repTimestamps)")
-            
-            return analysis
-        } else {
-            // Camera games don't use Universal3D ROM
-            return MovementAnalysisResult(
-                pattern: .unknown,
-                romPerRep: [],
-                repTimestamps: [],
-                totalReps: 0,
-                avgROM: 0.0,
-                maxROM: 0.0
-            )
+            if positions.count >= 10 {
+                // Determine game type for SPARC analysis
+                let gameType: ARKitSPARCAnalyzer.GameType
+                switch motionService.currentGameType {
+                case .fruitSlicer, .fanOutFlame:
+                    gameType = .pendulum
+                case .followCircle:
+                    gameType = .circular
+                default:
+                    gameType = .freeForm
+                }
+                
+                print("📊 [AnalyzingView] Calculating ARKit-based SPARC from \(positions.count) position samples")
+                arkitSPARCResult = ARKitSPARCAnalyzer.analyze(
+                    positions: positions,
+                    timestamps: timestamps,
+                    gameType: gameType,
+                    repCount: motionService.currentReps
+                )
+            } else {
+                print("📊 [AnalyzingView] Insufficient ARKit data for SPARC (\(positions.count) samples)")
+            }
         }
-    }
-    
-    private func calculateComprehensiveMetrics(romAnalysis: MovementAnalysisResult) async -> ExerciseSessionData {
-        // Start from the data captured at game completion. This already contains
-        // the most reliable snapshot of ROM, reps, timestamps, and surveys.
-        var enhancedData = sessionData
+
+        // Get the LIVE session data with per-rep ROM already calculated
+        let liveData = motionService.getFullSessionData(
+            overrideExerciseType: sessionData.exerciseType,
+            overrideTimestamp: sessionData.timestamp,
+            overrideScore: sessionData.score
+        )
+
+    var enhancedData = sessionData
         
-        // Attempt to merge in any richer metrics that may still be available
-        // from the motion service (e.g. SPARC series, AI scores, etc.). Only
-        // adopt values that add new information so we never overwrite valid
-        // captured data with reset defaults.
-        let liveData = motionService.getFullSessionData()
+        print("📊 [AnalyzingView] LIVE Session Data:")
+        print("   Reps: \(liveData.reps)")
+        print("   Max ROM: \(String(format: "%.1f", liveData.maxROM))°")
+        print("   ROM History: \(liveData.romHistory.count) values = \(liveData.romHistory.map { String(format: "%.1f", $0) }.joined(separator: ", "))°")
+        print("   SPARC Score: \(String(format: "%.1f", liveData.sparcScore))")
+    enhancedData.sparcData = liveData.sparcData
         
+        // Use LIVE data (already has correct per-rep ROM)
         if liveData.reps > enhancedData.reps {
             enhancedData.reps = liveData.reps
         }
         if liveData.maxROM > enhancedData.maxROM {
             enhancedData.maxROM = liveData.maxROM
         }
-        if !liveData.romHistory.isEmpty && enhancedData.romHistory.isEmpty {
+        
+        // ✅ ALWAYS use liveData.romHistory for handheld games
+        // This contains per-rep ROM calculated LIVE during gameplay
+        if isHandheldGame && !liveData.romHistory.isEmpty {
+            enhancedData.romHistory = liveData.romHistory
+            enhancedData.averageROM = liveData.romHistory.reduce(0, +) / Double(liveData.romHistory.count)
+            print("📊 [AnalyzingView] Using LIVE romHistory with \(liveData.romHistory.count) per-rep values")
+        } else if !liveData.romHistory.isEmpty && enhancedData.romHistory.isEmpty {
             enhancedData.romHistory = liveData.romHistory
             enhancedData.averageROM = liveData.romHistory.reduce(0, +) / Double(liveData.romHistory.count)
         }
+        
         if !liveData.repTimestamps.isEmpty && enhancedData.repTimestamps.isEmpty {
             enhancedData.repTimestamps = liveData.repTimestamps
         }
-        if !liveData.sparcHistory.isEmpty && enhancedData.sparcHistory.isEmpty {
+        
+        // NEW: Use ARKit-based SPARC if available (handheld games only)
+        if let arkitSPARC = arkitSPARCResult {
+            enhancedData.sparcHistory = arkitSPARC.perRepScores
+            enhancedData.sparcScore = arkitSPARC.smoothnessScore
+            enhancedData.sparcData = arkitSPARC.timeline
+            enhancedData.peakVelocity = arkitSPARC.peakVelocity
+            print("📊 [AnalyzingView] ✨ NEW ARKit-based SPARC computed:")
+            print("   Overall Score: \(String(format: "%.2f", arkitSPARC.overallScore))")
+            let smoothnessInt = arkitSPARC.smoothnessScore.isNaN || arkitSPARC.smoothnessScore.isInfinite ? 50 : Int(arkitSPARC.smoothnessScore)
+            print("   Smoothness: \(smoothnessInt)%")
+            print("   Per-rep scores: \(arkitSPARC.perRepScores.count) values")
+            print("   Peak Velocity: \(String(format: "%.2f", arkitSPARC.peakVelocity))m/s")
+            print("   Jerkiness: \(String(format: "%.3f", arkitSPARC.jerkiness))")
+        } else if !liveData.sparcHistory.isEmpty && enhancedData.sparcHistory.isEmpty {
+            // Fallback to old SPARC data if ARKit-based failed
             enhancedData.sparcHistory = liveData.sparcHistory
         }
+        
         if liveData.sparcScore > 0 && enhancedData.sparcScore == 0 {
             enhancedData.sparcScore = liveData.sparcScore
         }
         
-        // Override with Universal3D ROM analysis for handheld games when we
-        // actually have rep data waiting in the engine snapshot.
-        let isHandheldGame = !motionService.isCameraExercise
-        if isHandheldGame && romAnalysis.totalReps > 0 {
-            if enhancedData.reps == 0 {
-                enhancedData.reps = romAnalysis.totalReps
-            } else if romAnalysis.totalReps > enhancedData.reps + 1 {
-                print("⚠️ [AnalyzingView] Universal3D rep count (\(romAnalysis.totalReps)) exceeds captured reps (\(enhancedData.reps)) — keeping captured value")
-            }
-
-            if romAnalysis.maxROM > enhancedData.maxROM {
-                enhancedData.maxROM = romAnalysis.maxROM
-            }
-            if enhancedData.romHistory.isEmpty && !romAnalysis.romPerRep.isEmpty {
-                enhancedData.romHistory = romAnalysis.romPerRep
-            }
-            if enhancedData.repTimestamps.isEmpty && !romAnalysis.repTimestamps.isEmpty {
-                enhancedData.repTimestamps = romAnalysis.repTimestamps.map { Date(timeIntervalSince1970: $0) }
-            }
-            
-            print("📱 [AnalyzingView] Merged Universal3D analysis where helpful:")
-            print("   Reps: \(enhancedData.reps)")
-            print("   Max ROM: \(enhancedData.maxROM)°")
-            print("   ROM History: \(enhancedData.romHistory.count) values")
-        }
+        print("📊 [AnalyzingView] Final Enhanced Data:")
+        print("   Reps: \(enhancedData.reps)")
+        print("   Max ROM: \(String(format: "%.1f", enhancedData.maxROM))°")
+        print("   ROM History: \(enhancedData.romHistory.count) values")
+        print("   Average ROM: \(String(format: "%.1f", enhancedData.averageROM))°")
         
         return enhancedData
     }

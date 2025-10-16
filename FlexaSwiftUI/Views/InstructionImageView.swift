@@ -16,7 +16,6 @@ struct InstructionMediaView: View {
                 .renderingMode(.original)
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
-                .antialiased(true)
                 .saturation(1.18)
                 .contrast(1.12)
                 .brightness(0.08)

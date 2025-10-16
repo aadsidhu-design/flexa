@@ -204,6 +204,9 @@ final class VisionPoseProvider: ObservableObject {
             rightShoulderConfidence: conf(.rightShoulder),
             leftElbowConfidence: conf(.leftElbow),
             rightElbowConfidence: conf(.rightElbow),
+            leftWristConfidence: conf(.leftWrist),
+            rightWristConfidence: conf(.rightWrist),
+            noseConfidence: conf(.nose),
             neckConfidence: (ls != nil && rs != nil) ? (conf(.leftShoulder)+conf(.rightShoulder))/2.0 : 0.0
         )
     }

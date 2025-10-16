@@ -6,30 +6,75 @@ struct GamesView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var streaksService: GoalsAndStreaksService
     @EnvironmentObject var navigationCoordinator: NavigationCoordinator
+    @StateObject private var exerciseManager = CustomExerciseManager.shared
     
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
-                // Header
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Fitness")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                // Header with Add button
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Exercises")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        
+                        Text("Choose your rehabilitation exercise")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
                     
-                    Text("Choose your rehabilitation exercise")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                    Spacer()
+                    
+                    Button(action: {
+                        navigationCoordinator.showCustomExerciseCreator()
+                    }) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 44, height: 44)
+                            
+                            Image(systemName: "plus")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .shadow(color: Color.green.opacity(0.4), radius: 8, x: 0, y: 4)
+                    }
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
                 
-                // Recommended Exercises Section
-                RecommendedExercisesSection()
+                // Custom Exercises Section (if any exist)
+                if !exerciseManager.customExercises.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("Your Custom Exercises")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 16) {
+                            ForEach(exerciseManager.customExercises) { exercise in
+                                CustomExerciseCard(exercise: exercise) {
+                                    navigationCoordinator.showCustomExerciseGame(exercise: exercise)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
                 
                 // All Games Grid
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("All Exercises")
+                    Text("Built-In Exercises")
                         .font(.title2)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
@@ -39,11 +84,19 @@ struct GamesView: View {
                         GridItem(.flexible()),
                         GridItem(.flexible())
                     ], spacing: 16) {
-                        ForEach(GameType.allCases, id: \.self) { game in
+                        ForEach(GameType.allCases.filter({ $0 != .makeYourOwn }), id: \.self) { game in
                             ModernGameCard(game: game) {
                                 navigationCoordinator.showInstructions(for: game)
                             }
                         }
+#if DEBUG
+                        NavigationLink {
+                            TestROMExerciseView()
+                        } label: {
+                            DiagnosticCard()
+                        }
+                        .buttonStyle(PlainButtonStyle())
+#endif
                     }
                     .padding(Edge.Set.horizontal)
                 }
@@ -110,10 +163,56 @@ struct ModernGameCard: View {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.gray.opacity(0.1))
             )
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(PlainButtonStyle())
     }
 }
+
+#if DEBUG
+struct DiagnosticCard: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.purple.opacity(0.2))
+                    .frame(width: 60, height: 60)
+
+                Image(systemName: "gauge.badge.plus")
+                    .font(.system(size: 28))
+                    .foregroundColor(.purple)
+            }
+
+            VStack(spacing: 4) {
+                Text("ROM Test Harness")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+
+                Text("Developer")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+
+            HStack(spacing: 4) {
+                Image(systemName: "hammer")
+                    .font(.caption2)
+                Text("Diagnostics")
+                    .font(.caption2)
+            }
+            .foregroundColor(.gray)
+        }
+        .frame(height: 160)
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.gray.opacity(0.1))
+        )
+    }
+}
+#endif
 
 
 enum GameType: String, CaseIterable, Identifiable {
@@ -135,7 +234,6 @@ enum GameType: String, CaseIterable, Identifiable {
         case .balloonPop: return "Elbow Extension"
         case .constellationMaker: return "Arm Raises"
         case .makeYourOwn: return "Make Your Own"
-        
         }
     }
 
@@ -159,8 +257,7 @@ enum GameType: String, CaseIterable, Identifiable {
         case .wallClimbers: return "Prop phone to see yourself - raise and lower arms to climb higher"
         case .balloonPop: return "Prop phone to see yourself - raise arms overhead to pop balloons"
         case .constellationMaker: return "Prop phone to see yourself - connect constellation dots with your hand"
-        case .makeYourOwn: return "Create custom exercises with your preferred duration and tracking mode"
-        
+    case .makeYourOwn: return "Follow AI-tailored guidance with a simple timer—no scores, just your movement."
         }
     }
     
@@ -173,7 +270,6 @@ enum GameType: String, CaseIterable, Identifiable {
         case .balloonPop: return "balloon.2"
         case .constellationMaker: return "star.fill"
         case .makeYourOwn: return "gearshape.fill"
-        
         }
     }
     
@@ -186,7 +282,6 @@ enum GameType: String, CaseIterable, Identifiable {
         case .balloonPop: return .pink
         case .constellationMaker: return .cyan
         case .makeYourOwn: return .blue
-        
         }
     }
     
@@ -199,7 +294,6 @@ enum GameType: String, CaseIterable, Identifiable {
         case .balloonPop: return "Camera"
         case .constellationMaker: return "Camera"
         case .makeYourOwn: return "Both"
-        
         }
     }
     
@@ -212,7 +306,6 @@ enum GameType: String, CaseIterable, Identifiable {
         case .balloonPop: return "instr_balloon_pop"
         case .constellationMaker: return "instr_constellation"  // No image - will show placeholder
         case .makeYourOwn: return "instr_make_your_own"  // No image - will show placeholder
-        
         }
     }
 
@@ -267,11 +360,85 @@ enum GameType: String, CaseIterable, Identifiable {
         case .constellationMaker:
             return "A camera-based arm raise sequence guiding patients to multiple targets. Promotes multi-directional shoulder raises and sustained control."
         case .makeYourOwn:
-            return "A customizable exercise mode where patients configure their own motion tracking routines and durations."
+            return "An instruction-first exercise where the AI designs your flow. Pick camera or handheld, follow the guidance, and let the timer lead."
         }
     }
     
     var id: String { rawValue }
+}
+
+// MARK: - Custom Exercise Card
+
+struct CustomExerciseCard: View {
+    let exercise: CustomExercise
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(exercise.color.opacity(0.2))
+                        .frame(width: 60, height: 60)
+                    
+                    Image(systemName: exercise.icon)
+                        .font(.system(size: 28))
+                        .foregroundColor(exercise.color)
+                }
+                
+                VStack(spacing: 4) {
+                    Text(exercise.name)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                    
+                    Text(exercise.briefDescription)
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                }
+                
+                HStack(spacing: 4) {
+                    if exercise.timesCompleted > 0 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                        Text("\(exercise.timesCompleted)x")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.caption2)
+                            .foregroundColor(.cyan)
+                        Text("New")
+                            .font(.caption2)
+                            .foregroundColor(.cyan)
+                    }
+                }
+            }
+            .frame(height: 160)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.gray.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(exercise.color.opacity(0.3), lineWidth: 1.5)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .contextMenu {
+            Button(role: .destructive) {
+                CustomExerciseManager.shared.deleteExercise(id: exercise.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
 }
 
 #Preview {

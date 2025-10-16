@@ -5,6 +5,8 @@ import Combine
 enum NavigationPath: View, Hashable {
     case instructions(GameType)
     case game(GameType, PreSurveyData)
+    case customExerciseCreator
+    case customExerciseGame(CustomExercise)
     case analyzing(ExerciseSessionData)
     case results(ExerciseSessionData)
 
@@ -15,6 +17,10 @@ enum NavigationPath: View, Hashable {
             GameInstructionsView(gameType: gameType)
         case .game(let gameType, let preSurveyData):
             CleanGameHostView(gameType: gameType, preSurveyData: preSurveyData)
+        case .customExerciseCreator:
+            CustomExerciseCreatorView()
+        case .customExerciseGame(let exercise):
+            CustomExerciseGameView(exercise: exercise)
         case .analyzing(let sessionData):
             AnalyzingView(sessionData: sessionData)
         case .results(let sessionData):
@@ -29,6 +35,11 @@ enum NavigationPath: View, Hashable {
         case .game(let gameType, _):
             hasher.combine(gameType)
             hasher.combine("game")
+        case .customExerciseCreator:
+            hasher.combine("customExerciseCreator")
+        case .customExerciseGame(let exercise):
+            hasher.combine(exercise.id)
+            hasher.combine("customExerciseGame")
         case .analyzing(_):
             hasher.combine("analyzing")
         case .results(_):
@@ -132,6 +143,24 @@ class NavigationCoordinator: ObservableObject {
         performOnMain {
             print("🧭 [Navigation] → Calibration Wizard")
             NotificationCenter.default.post(name: NSNotification.Name("ShowCalibrationWizard"), object: nil)
+        }
+    }
+    
+    // Navigate to custom exercise creator
+    func showCustomExerciseCreator() {
+        performOnMain { [self] in
+            print("🧭 [Navigation] → Custom Exercise Creator")
+            self.path.append(.customExerciseCreator)
+            print("🧭 [Navigation] Path depth: \(self.path.count)")
+        }
+    }
+    
+    // Navigate to custom exercise game
+    func showCustomExerciseGame(exercise: CustomExercise) {
+        performOnMain { [self] in
+            print("🧭 [Navigation] → Custom Exercise Game: \(exercise.name)")
+            self.path.append(.customExerciseGame(exercise))
+            print("🧭 [Navigation] Path depth: \(self.path.count)")
         }
     }
     

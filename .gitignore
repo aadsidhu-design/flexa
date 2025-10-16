@@ -114,3 +114,6 @@ build_*.log
 # Root-level ML artifacts
 /saved_model.pb
 /variables/
+
+.gemini/
+gha-creds-*.json
