@@ -63,6 +63,9 @@ struct WallClimbersGameView: View {
         .onAppear {
             screenSize = geometry.size
         }
+        .onChange(of: geometry.size) { newSize in
+            screenSize = newSize
+        }
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {

@@ -110,6 +110,9 @@ struct BalloonPopGameView: View {
             FlexaLog.game.info("🔍 [BalloonPop] onAppear called - setting up game")
             setupGame()
         }
+        .onChange(of: geometry.size) { newSize in
+            screenSize = newSize
+        }
         }
         .onDisappear {
             // Re-enable idle timer (allow screen to sleep)

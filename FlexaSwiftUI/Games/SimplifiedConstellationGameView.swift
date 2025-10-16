@@ -161,6 +161,9 @@ struct ArmRaisesGameView: View {
                     .onAppear {
                         screenSize = geometry.size
                     }
+                    .onChange(of: geometry.size) { newSize in
+                        screenSize = newSize
+                    }
                 }
             }
         }
