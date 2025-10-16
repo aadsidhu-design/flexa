@@ -322,8 +322,8 @@ class MediaPipePoseProvider: NSObject, ObservableObject {
         let isFront = state.isFrontCamera
 
         // Clamp to 0-1 range (MediaPipe sometimes returns out-of-bounds values)
-        var rawX = max(0, min(1, CGFloat(landmark.x)))
-        var rawY = max(0, min(1, CGFloat(landmark.y)))
+        let rawX = max(0, min(1, CGFloat(landmark.x)))
+        let rawY = max(0, min(1, CGFloat(landmark.y)))
         
         let originalX = rawX
         

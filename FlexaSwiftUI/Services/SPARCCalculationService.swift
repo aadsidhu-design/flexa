@@ -283,7 +283,6 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
                                 self.currentSPARC = smoothed
                                 self.updateAverageSPARC()
                                 // Store SPARC data point with REAL timestamp for proper graphing
-                                let timeFromStart = now.timeIntervalSince(self.sessionStartTime)
                                 let dataPoint = SPARCDataPoint(
                                     timestamp: now,
                                     sparcValue: smoothed,

@@ -248,19 +248,7 @@ struct ArmRaisesGameView: View {
     }
     
     private func updateHandTracking() {
-        // Ensure we have valid pose data before tracking
-        guard let poseKeypoints = motionService.poseKeypoints else {
-            // NO WRIST DETECTED - hide hand circle by setting to zero
-            handPosition = .zero
-            isUserInteracting = false
-            isHoveringOverCurrentTarget = false
-            return
-        }
-        
         // Use the active arm for tracking
-        let activeSide = poseKeypoints.phoneArm
-        let activeWrist = (activeSide == .left) ? poseKeypoints.leftWrist : poseKeypoints.rightWrist
-        
         if let wrist = motionService.poseKeypoints?.leftWrist {
             let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
             
