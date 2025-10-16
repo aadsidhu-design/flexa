@@ -1,69 +1,52 @@
 import Foundation
 import UIKit
 
-/// Utility to map Vision 480x640 reference coordinates into the app's preview / screen space.
-/// Handles aspect-fill scaling (center-crop) which is used by the preview layer so points
-/// produced in the fixed reference space land correctly on the displayed camera view.
-/// CRITICAL: Phone is held VERTICALLY, camera is front-facing with mirroring.
+/// Utility to map Vision normalized coordinates into the app's preview / screen space.
+/// COORDINATE SYSTEM EXPLANATION:
+/// 1. Vision (BlazePose) returns (0-1) normalized coords in CAMERA FRAME (landscape: 1920x1080)
+/// 2. Phone screen is PORTRAIT: 390x844
+/// 3. Preview layer uses resizeAspectFill - scales to fill while maintaining aspect ratio
+/// 4. Must rotate 90° AND handle front camera mirror AND account for scaling/centering
 struct CoordinateMapper {
-    /// Map a point expressed in the reference space (default 480x640) into screen coordinates
-    /// taking into account aspect-fill scaling and center cropping.
-    /// PHONE ORIENTATION: Vertical (portrait) - 390x844 screen typical
-    /// CAMERA ORIENTATION: Front camera captures 640x480 (landscape), mirrored horizontally
-    /// - Parameters:
-    ///   - point: Point in reference space (x: 0..referenceWidth, y: 0..referenceHeight)
-    ///   - referenceSize: The canonical vision reference size (default 480x640)
-    ///   - previewSize: The size of the preview view (typically UIScreen.main.bounds - portrait)
-    /// - Returns: CGPoint in preview/screen coordinates (clamped to preview bounds)
-    static func mapVisionPointToScreen(_ point: CGPoint,
-                                       referenceSize: CGSize = CGSize(width: 480, height: 640),
-                                       previewSize: CGSize = UIScreen.main.bounds.size) -> CGPoint {
-        guard referenceSize.width > 0 && referenceSize.height > 0 else { return .zero }
-
-        // CRITICAL FIX: Vision coordinates come in 640x480 (landscape) but phone is vertical (portrait)
-        // The camera feed is rotated 90° to fill the portrait screen
-        // Vision X (0-640) maps to screen Y (top to bottom) BUT MUST BE INVERTED
-        // Vision Y (0-480) maps to screen X (left to right), MIRRORED for front camera
+    
+    static func mapVisionPointToScreen(
+        _ point: CGPoint,
+        cameraResolution: CGSize,
+        previewSize: CGSize
+    ) -> CGPoint {
         
-        // Mirror horizontally for front-facing camera (left hand appears on right side)
-        let mirroredX = referenceSize.width - point.x
+        // DEFENSIVE CHECKS
+        guard cameraResolution.width > 0, cameraResolution.height > 0 else {
+            return .zero
+        }
         
-        // Rotate 90° clockwise to match portrait orientation
-        // Vision's X (horizontal in landscape) becomes screen's Y (vertical in portrait)
-        // Vision's Y (vertical in landscape) becomes screen's X (horizontal in portrait)
-        // CRITICAL: Invert Y so hand UP (small Vision X) = pin UP (small screen Y)
-        let rotatedX = point.y  // Vision Y → Screen X (mirrored handles left/right)
-        let rotatedY = referenceSize.width - mirroredX  // INVERTED: Hand up = pin up
+        guard previewSize.width > 0, previewSize.height > 0 else {
+            return .zero
+        }
         
-        // Now map with rotated reference dimensions (swap width/height for rotation)
-        let rotatedRefWidth = referenceSize.height  // 640
-        let rotatedRefHeight = referenceSize.width   // 480
+        guard !point.x.isNaN, !point.x.isInfinite, !point.y.isNaN, !point.y.isInfinite else {
+            return .zero
+        }
         
-        // Determine aspect-fill scale
-        let scaleX = previewSize.width / rotatedRefWidth
-        let scaleY = previewSize.height / rotatedRefHeight
-        let scale = max(scaleX, scaleY)
-
-        // Size of the scaled image that is center-cropped to fill the preview
-        let imageWidth = rotatedRefWidth * scale
-        let imageHeight = rotatedRefHeight * scale
-
-        // Offset of the image's origin relative to the preview (center crop)
-        let offsetX = (imageWidth - previewSize.width) / 2.0
-        let offsetY = (imageHeight - previewSize.height) / 2.0
-
-        // Scale the rotated point
-        let scaledX = rotatedX * scale
-        let scaledY = rotatedY * scale
-
-        // Translate into preview coordinates by subtracting the crop offset
-        var previewX = scaledX - offsetX
-        var previewY = scaledY - offsetY
-
-        // Clamp to preview bounds to avoid off-screen UI coordinates
-        previewX = max(0, min(previewX, previewSize.width))
-        previewY = max(0, min(previewY, previewSize.height))
-
-        return CGPoint(x: previewX, y: previewY)
+        // VISION IS ALREADY IN PORTRAIT SPACE
+        // The system automatically rotates Vision output to match screen orientation
+        // So Vision coordinates (0-1) are already in portrait space, NOT landscape!
+        // Example: Vision x=0.5 = 50% across portrait WIDTH (390px)
+        //          Vision y=0.5 = 50% down portrait HEIGHT (844px)
+        
+        // STEP 1: Un-normalize Vision coords directly to screen space
+        // Vision coordinates are already normalized (0-1 range) and already mirrored for front camera
+        // NO rotation needed - Vision is already portrait!
+        let screenX = point.x * previewSize.width
+        let screenY = point.y * previewSize.height
+        
+        // STEP 2: Clamp to screen bounds (allows off-screen coordinates)
+        // Note: Mirror is already applied in MediaPipePoseProvider.getNormalizedMirroredPoint()
+        let finalX = max(0, min(previewSize.width, screenX))
+        let finalY = max(0, min(previewSize.height, screenY))
+        
+        FlexaLog.game.debug("🎯 [COORDS-DEEP] vision(\(String(format: "%.3f", point.x)), \(String(format: "%.3f", point.y))) -> screen(\(String(format: "%.1f", finalX)), \(String(format: "%.1f", finalY)))")
+        
+        return CGPoint(x: finalX, y: finalY)
     }
 }
