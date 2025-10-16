@@ -89,7 +89,6 @@ struct GamesView: View {
                                 navigationCoordinator.showInstructions(for: game)
                             }
                         }
-#if DEBUG
                         NavigationLink {
                             TestROMExerciseView()
                         } label: {
@@ -126,7 +125,6 @@ struct GamesView: View {
                             )
                         }
                         .buttonStyle(PlainButtonStyle())
-#endif
                     }
                     .padding(Edge.Set.horizontal)
                 }
