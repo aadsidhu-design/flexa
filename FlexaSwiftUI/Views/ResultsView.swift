@@ -116,97 +116,13 @@ struct ResultsView: View {
                                     .frame(height: 300)
                             }
                         } else {
-                            // Smoothness Graph — plot over TIME (seconds)
-                            if !sessionData.sparcData.isEmpty {
-                                let start = sessionData.sparcData.first!.timestamp
-                                let timeValues = sessionData.sparcData.map { $0.timestamp.timeIntervalSince(start) }
-                                let sparcValues = sessionData.sparcData.map { $0.sparc }
-                                let maxTime = timeValues.max() ?? 0
-                                let minSparc = sparcValues.min() ?? 0
-                                let maxSparc = sparcValues.max() ?? 100
-                                let xDomainMax = max(1.0, ceil(maxTime))
-                                // Scale Y to actual data with padding (20% on each side for breathing room)
-                                let yRange = maxSparc - minSparc
-                                let yPadding = max(1.0, yRange * 0.15)
-                                let yMin = max(0, minSparc - yPadding)
-                                let yMax = min(100, maxSparc + yPadding)
-                                Chart {
-                                    ForEach(Array(sessionData.sparcData.enumerated()), id: \.offset) { _, point in
-                                        LineMark(
-                                            x: .value("Time (s)", point.timestamp.timeIntervalSince(start)),
-                                            y: .value("Smoothness", point.sparc)
-                                        )
-                                        .foregroundStyle(.green)
-                                        .lineStyle(StrokeStyle(lineWidth: 3))
-                                    }
-                                }
-                                .frame(height: 300)
-                                .chartYScale(domain: yMin...yMax)
-                                .chartXScale(domain: 0...xDomainMax)
-                                .chartPlotStyle { plot in
-                                    plot.background(Color.black)
-                                }
-                                .chartXAxis {
-                                    AxisMarks(position: .bottom) { _ in
-                                        AxisGridLine().foregroundStyle(Color.gray.opacity(0.2))
-                                        AxisTick().foregroundStyle(Color.gray.opacity(0.6))
-                                        AxisValueLabel().foregroundStyle(Color.white)
-                                    }
-                                }
-                                .chartYAxis { AxisMarks(position: .leading) { value in
-                                    AxisGridLine().foregroundStyle(Color.gray.opacity(0.2))
-                                    AxisTick().foregroundStyle(Color.gray.opacity(0.6))
-                                    AxisValueLabel {
-                                        if let v = value.as(Double.self) {
-                                            Text("\(String(format: "%.0f", v))%")
-                                                .font(.caption)
-                                                .foregroundColor(.white)
-                                        }
-                                    }
-                                }}
-                                .chartXAxisLabel("Time (s)", position: .bottom)
-                                .chartYAxisLabel("Smoothness (0-100)", position: .leading)
-                            } else if !sessionData.sparcHistory.isEmpty {
-                                // Fallback: if only legacy per-rep history exists, synthesize uniform time axis across session duration
-                                let count = sessionData.sparcHistory.count
-                                let duration = max(1.0, sessionData.duration)
-                                let minSparc = sessionData.sparcHistory.min() ?? 0
-                                let maxSparc = sessionData.sparcHistory.max() ?? 100
-                                // Scale Y to actual data with padding
-                                let yRange = maxSparc - minSparc
-                                let yPadding = max(1.0, yRange * 0.15)
-                                let yMin = max(0, minSparc - yPadding)
-                                let yMax = min(100, maxSparc + yPadding)
-                                Chart {
-                                    ForEach(Array(sessionData.sparcHistory.enumerated()), id: \.offset) { i, v in
-                                        let t = (count > 1) ? (Double(i) / Double(count - 1)) * duration : 0.0
-                                        LineMark(
-                                            x: .value("Time (s)", t),
-                                            y: .value("Smoothness", v)
-                                        )
-                                        .foregroundStyle(.green)
-                                        .lineStyle(StrokeStyle(lineWidth: 3))
-                                    }
-                                }
-                                .frame(height: 300)
-                                .chartYScale(domain: yMin...yMax)
-                                .chartPlotStyle { plot in
-                                    plot.background(Color.black)
-                                }
-                                .chartXAxis {
-                                    AxisMarks(position: .bottom) { _ in
-                                        AxisGridLine().foregroundStyle(Color.gray.opacity(0.2))
-                                        AxisTick().foregroundStyle(Color.gray.opacity(0.6))
-                                        AxisValueLabel().foregroundStyle(Color.white)
-                                    }
-                                }
-                                .chartYAxis { AxisMarks(position: .leading) {
-                                    AxisGridLine().foregroundStyle(Color.gray.opacity(0.2))
-                                    AxisTick().foregroundStyle(Color.gray.opacity(0.6))
-                                    AxisValueLabel().foregroundStyle(Color.white)
-                                }}
-                                .chartXAxisLabel("Time (s)", position: .bottom)
-                                .chartYAxisLabel("Smoothness (0-100)", position: .leading)
+                            // Smoothness Trend Chart
+                            if !sessionData.sparcHistory.isEmpty {
+                                SmoothnessTrendChartView(
+                                    sparcHistory: sessionData.sparcHistory,
+                                    title: "📊 Smoothness Trend"
+                                )
+                                .padding(.horizontal, 20)
                             } else {
                                 Text("No smoothness data available")
                                     .foregroundColor(.gray)

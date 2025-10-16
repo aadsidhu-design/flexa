@@ -96,6 +96,36 @@ struct GamesView: View {
                             DiagnosticCard()
                         }
                         .buttonStyle(PlainButtonStyle())
+                        
+                        NavigationLink {
+                            ScrollView {
+                                VStack(spacing: 20) {
+                                    TestROMCardView()
+                                        .padding()
+                                }
+                            }
+                            .navigationTitle("Test ROM Card")
+                            .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            VStack(spacing: 12) {
+                                Image(systemName: "rectangle.3.offgrid")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(.blue)
+                                
+                                Text("ROM Card")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 100)
+                            .background(Color.black.opacity(0.5))
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.blue.opacity(0.5), lineWidth: 2)
+                            )
+                        }
+                        .buttonStyle(PlainButtonStyle())
 #endif
                     }
                     .padding(Edge.Set.horizontal)
