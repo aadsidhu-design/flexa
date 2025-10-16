@@ -90,10 +90,12 @@ struct SessionDetailsPopupView: View {
                                 MetricCard(title: "Avg ROM", value: "\(String(format: "%.1f", avgROM))°", color: .cyan)
                             }
                             
-                            // New average SPARC card: compute from sparcHistory if available
+                            // Average SPARC: use sparcHistory if available, else use sparcScore
                             if !session.sparcHistory.isEmpty {
                                 let avg = session.sparcHistory.reduce(0, +) / Double(session.sparcHistory.count)
                                 MetricCard(title: "Avg SPARC", value: String(format: "%.0f%%", avg), color: .orange)
+                            } else if session.sparcScore > 0 {
+                                MetricCard(title: "Avg SPARC", value: String(format: "%.0f%%", session.sparcScore * 100), color: .orange)
                             }
                         }
                     }
