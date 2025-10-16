@@ -508,25 +508,11 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
             return
         }
         
-        // Direction change detected!
+        // Direction change detected
+        // Note: Kalman IMU is the primary rep detector for FruitSlicer
+        // Rep recording handled automatically by Kalman, not by direction changes
         lastPendulumDirection = currentDirection
         lastDirectionChangeTime = currentTime
-        
-        // Record the rep with motion service
-        recordRepForFruitSlicer()
-    }
-    
-    private func recordRepForFruitSlicer() {
-        guard let motionService = motionService else { return }
-        
-        // Note: Kalman IMU detector handles rep recording automatically for FruitSlicer
-        // Don't call completeHandheldRep() here to avoid double-counting
-        // FruitSlicer direction changes signal when reps occur, but Kalman IMU confirms them
-        
-        // Just log the current rep count (Kalman detector has already recorded it)
-        let arkitROM = motionService.getLastHandheldRepROM()
-        let minimumThreshold = motionService.getMinimumROMThreshold(for: .fruitSlicer)
-        FlexaLog.game.info("🍎 [FruitSlicer] Rep from direction change | ROM: \(String(format: "%.1f", arkitROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°) | Reps: \(motionService.romPerRepCount)")
     }
 
     // MARK: - Orientation Handling
