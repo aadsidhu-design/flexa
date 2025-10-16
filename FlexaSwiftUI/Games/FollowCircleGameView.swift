@@ -362,8 +362,35 @@ struct FollowCircleGameView: View {
     }
     
     private func updateUserCirclePosition() {
-        // ARKit-based 3D position mapping has been simplified
-        // Position will be tracked through vision-based camera data instead
+        guard let keypoints = motionService.poseKeypoints else {
+            userCirclePosition = CGPoint(x: screenSize.width / 2, y: screenSize.height / 2)
+            rom = motionService.currentROM
+            return
+        }
+        
+        // Track the active arm's wrist using vision-based camera data
+        let activeWrist = (keypoints.phoneArm == .left) ? keypoints.leftWrist : keypoints.rightWrist
+        
+        guard let wrist = activeWrist else {
+            // Wrist not visible, keep current position
+            rom = motionService.currentROM
+            return
+        }
+        
+        // Map vision coordinates to screen coordinates
+        let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+        
+        // Smooth cursor movement for better tracking
+        let alpha: CGFloat = 0.75
+        if userCirclePosition == .zero {
+            userCirclePosition = mapped
+        } else {
+            userCirclePosition = CGPoint(
+                x: userCirclePosition.x * (1 - alpha) + mapped.x * alpha,
+                y: userCirclePosition.y * (1 - alpha) + mapped.y * alpha
+            )
+        }
+        
         rom = motionService.currentROM
     }
     
