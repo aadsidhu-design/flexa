@@ -213,7 +213,6 @@ struct FollowCircleGameView: View {
         
         // Reset SPARC service to clear old data from previous sessions
         motionService.sparcService.reset()
-        FlexaLog.game.info("🎯 [FollowCircle] SPARC service reset for fresh session")
         
         // ROM tracking mode automatically determined by SimpleMotionService based on game type
         motionService.startGameSession(gameType: .followCircle)

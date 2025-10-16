@@ -291,7 +291,6 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
                                     jointAngles: [:]
                                 )
                                 self.sparcDataPoints.append(dataPoint)
-                                FlexaLog.motion.debug("📊 [SPARC] Data point added: t=\(String(format: "%.2f", timeFromStart))s value=\(String(format: "%.1f", smoothed)) total=\(self.sparcDataPoints.count)")
                                 self.calculationFailures = 0 // Reset on success
                             }
                         }
