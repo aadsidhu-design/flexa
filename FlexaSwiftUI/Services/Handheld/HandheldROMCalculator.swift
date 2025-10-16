@@ -75,21 +75,13 @@ final class HandheldROMCalculator: ObservableObject {
             guard let self = self else { return }
             self.motionProfile = profile
             self.resetLocked()
-            FlexaLog.motion.info("📐 [ROM-AUDIT] Session started:")
-            FlexaLog.motion.info("  ├─ Profile: \(String(describing: profile))")
-            FlexaLog.motion.info("  ├─ Arm Length: \(String(format: "%.2f", self.armLength))m")
-            FlexaLog.motion.info("  ├─ Formula: ROM(°) = (arcLength / armLength) × 180/π")
-            FlexaLog.motion.info("  ├─ Min arc to count: \(String(format: "%.4f", self.minArcLength))m")
-            FlexaLog.motion.info("  ├─ Min segment: \(String(format: "%.4f", self.minSegmentLength))m")
-            FlexaLog.motion.info("  ├─ Position filtering: RAW (no smoothing)")
-            FlexaLog.motion.info("  └─ Example: 0.6m arm @ 90° = \(String(format: "%.2f", (0.6 * .pi / 2.0 / 0.6) * 180.0 / .pi))° ROM")
+            FlexaLog.motion.debug("📐 [HandheldROM] Session started: profile=\(String(describing: profile)), arm=\(String(format: "%.2f", self.armLength))m")
         }
     }
 
     func configure(profile: MotionProfile) {
         queue.async { [weak self] in
             self?.motionProfile = profile
-            FlexaLog.motion.info("📐 [AUDIT] ROMCalculator profile configured to: \(String(describing: profile))")
         }
     }
     
@@ -97,17 +89,12 @@ final class HandheldROMCalculator: ObservableObject {
         queue.async { [weak self] in
             self?.referencePosition = position
             self?.baselinePosition = position
-            FlexaLog.motion.info("📐 [AUDIT] ROMCalculator reference position set.")
         }
     }
     
     func processPosition(_ position: SIMD3<Float>, timestamp: TimeInterval) {
         queue.async { [weak self] in
             guard let self = self else { return }
-
-            if self.positions.isEmpty {
-                FlexaLog.motion.info("📐 [ROM-AUDIT] First position received. Arm length: \(String(format: "%.2f", self.armLength))m (using RAW positions, no filtering)")
-            }
 
             self.positions.append(position)
             self.timestamps.append(timestamp)
@@ -117,7 +104,6 @@ final class HandheldROMCalculator: ObservableObject {
             if self.baselinePosition == nil { 
                 self.baselinePosition = position
                 self.repBaselinePosition = position
-                FlexaLog.motion.debug("📐 [ROM-AUDIT] Baseline position set: (\(String(format: "%.3f", position.x)), \(String(format: "%.3f", position.y)), \(String(format: "%.3f", position.z)))m")
             }
 
             if self.motionProfile == .circular {
@@ -205,7 +191,7 @@ final class HandheldROMCalculator: ObservableObject {
     func endSession() -> (avgROM: Double, maxROM: Double, romPerRep: [Double]) {
         return queue.sync {
             let avgROM = romPerRep.isEmpty ? 0 : romPerRep.reduce(0, +) / Double(romPerRep.count)
-            FlexaLog.motion.info("📐 [AUDIT] ROMCalculator session ended. Avg ROM: \(String(format: "%.1f", avgROM))°, Max ROM: \(String(format: "%.1f", self.maxROM))°")
+            FlexaLog.motion.debug("📐 [HandheldROM] Session ended: avgROM=\(String(format: "%.1f", avgROM))°, maxROM=\(String(format: "%.1f", self.maxROM))°")
             return (avgROM, maxROM, romPerRep)
         }
     }
@@ -252,7 +238,6 @@ final class HandheldROMCalculator: ObservableObject {
         guard armLength > 0 else { return 0.0 }
         let ratio = max(0.0, min(radius / armLength, 1.0))
         let angle = asin(ratio) * 180.0 / .pi
-        FlexaLog.motion.debug("📐 [AUDIT] ROM from Radius: \(String(format: "%.1f", angle))° (Radius: \(String(format: "%.3f", radius))m, Arm: \(String(format: "%.2f", self.armLength))m)")
         return min(max(angle, 0.0), 90.0)
     }
 
@@ -354,6 +339,6 @@ final class HandheldROMCalculator: ObservableObject {
         currentCircularRadius = 0.0
         circularMotionCenter = nil
         circularSampleCount = 0
-        FlexaLog.motion.info("📐 [ROM-AUDIT] ROMCalculator state reset.")
+        FlexaLog.motion.debug("📐 [HandheldROM] State reset")
     }
 }
