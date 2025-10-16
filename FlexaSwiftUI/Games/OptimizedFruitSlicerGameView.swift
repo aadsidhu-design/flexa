@@ -525,6 +525,7 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         // Only count as rep if ROM meets threshold
         if currentROM >= minimumThreshold {
             motionService.addRomPerRep(currentROM)
+            motionService.completeHandheldRep()
             FlexaLog.game.info("🍎 [FruitSlicer] Rep from direction change | ROM: \(String(format: "%.1f", currentROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°) | Reps: \(motionService.romPerRepCount)")
         }
     }

@@ -207,6 +207,12 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     FlexaLog.motion.warning("[DEPRECATED] addSparcHistory called — game view attempted direct SPARC injection")
     }
     
+    /// Signal ROM calculator to complete current rep and reset for next rep
+    /// Called when a game detects a rep (e.g., Fruit Slicer direction change)
+    func completeHandheldRep() {
+        handheldROMCalculator.completeRep(timestamp: Date().timeIntervalSince1970)
+    }
+    
     // MARK: - ROM Consistency and Validation
     
     /// Standardized ROM validation - ensures consistent units and ranges across all games
