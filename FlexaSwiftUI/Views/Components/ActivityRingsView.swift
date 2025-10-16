@@ -118,25 +118,9 @@ struct ActivityRing: View {
                 .frame(width: size, height: size)
                 .rotationEffect(.degrees(-90))
                 .animation(.easeOut(duration: 0.15), value: goal.progress)
-                .overlay(
-                    // Full blue coverage when complete
-                    Circle()
-                        .trim(from: 0, to: goal.isCompleted ? 1.0 : 0)
-                        .stroke(
-                            appleRingColor(for: goal.type).opacity(0.3),
-                            style: StrokeStyle(lineWidth: strokeWidth + 2, lineCap: .round)
-                        )
-                        .frame(width: size + 4, height: size + 4)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeOut(duration: 0.3), value: goal.isCompleted)
-                )
-            
-            // Completion indicator (static to avoid lag)
-            if goal.isCompleted {
-                Circle()
-                    .stroke(appleRingColor(for: goal.type).opacity(0.3), lineWidth: strokeWidth + 4)
-                    .frame(width: size + 8, height: size + 8)
-            }
+                .shadow(color: goal.isCompleted ? appleRingColor(for: goal.type).opacity(0.6) : Color.clear, radius: goal.isCompleted ? 12 : 0, x: 0, y: 0)
+                .shadow(color: goal.isCompleted ? appleRingColor(for: goal.type).opacity(0.3) : Color.clear, radius: goal.isCompleted ? 20 : 0, x: 0, y: 0)
+                .animation(.easeOut(duration: 0.3), value: goal.isCompleted)
         }
         .scaleEffect(isPressed ? 0.98 : 1.0)
         .onTapGesture {
