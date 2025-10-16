@@ -68,15 +68,6 @@ struct CustomExerciseCreatorView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.blue)
-                }
-            }
-        }
         .dismissKeyboardOnTap()
         .alert("Analysis Error", isPresented: $showingError) {
             Button("OK", role: .cancel) { }
