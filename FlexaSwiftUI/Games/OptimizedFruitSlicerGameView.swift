@@ -519,18 +519,14 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     private func recordRepForFruitSlicer() {
         guard let motionService = motionService else { return }
         
-        // Complete the rep with ARKit-based ROM (from HandheldROMCalculator)
-        motionService.completeHandheldRep()
+        // Note: Kalman IMU detector handles rep recording automatically for FruitSlicer
+        // Don't call completeHandheldRep() here to avoid double-counting
+        // FruitSlicer direction changes signal when reps occur, but Kalman IMU confirms them
         
-        // Get the ARKit-based ROM that was just calculated (NOT IMU-based)
+        // Just log the current rep count (Kalman detector has already recorded it)
         let arkitROM = motionService.getLastHandheldRepROM()
         let minimumThreshold = motionService.getMinimumROMThreshold(for: .fruitSlicer)
-        
-        // Only count as rep if ROM meets threshold
-        if arkitROM >= minimumThreshold {
-            motionService.addRomPerRep(arkitROM)
-            FlexaLog.game.info("🍎 [FruitSlicer] Rep from direction change | ROM: \(String(format: "%.1f", arkitROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°) | Reps: \(motionService.romPerRepCount)")
-        }
+        FlexaLog.game.info("🍎 [FruitSlicer] Rep from direction change | ROM: \(String(format: "%.1f", arkitROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°) | Reps: \(motionService.romPerRepCount)")
     }
 
     // MARK: - Orientation Handling
