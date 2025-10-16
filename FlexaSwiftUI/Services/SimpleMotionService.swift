@@ -213,6 +213,12 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         handheldROMCalculator.completeRep(timestamp: Date().timeIntervalSince1970)
     }
     
+    /// Get the ARKit-based ROM of the most recently completed rep (NOT IMU-based)
+    /// Use this for games like Fruit Slicer that detect reps via other methods
+    func getLastHandheldRepROM() -> Double {
+        return handheldROMCalculator.getLastRepROM()
+    }
+    
     // MARK: - ROM Consistency and Validation
     
     /// Standardized ROM validation - ensures consistent units and ranges across all games

@@ -519,14 +519,17 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     private func recordRepForFruitSlicer() {
         guard let motionService = motionService else { return }
         
-        let currentROM = motionService.currentROM
+        // Complete the rep with ARKit-based ROM (from HandheldROMCalculator)
+        motionService.completeHandheldRep()
+        
+        // Get the ARKit-based ROM that was just calculated (NOT IMU-based)
+        let arkitROM = motionService.getLastHandheldRepROM()
         let minimumThreshold = motionService.getMinimumROMThreshold(for: .fruitSlicer)
         
         // Only count as rep if ROM meets threshold
-        if currentROM >= minimumThreshold {
-            motionService.addRomPerRep(currentROM)
-            motionService.completeHandheldRep()
-            FlexaLog.game.info("🍎 [FruitSlicer] Rep from direction change | ROM: \(String(format: "%.1f", currentROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°) | Reps: \(motionService.romPerRepCount)")
+        if arkitROM >= minimumThreshold {
+            motionService.addRomPerRep(arkitROM)
+            FlexaLog.game.info("🍎 [FruitSlicer] Rep from direction change | ROM: \(String(format: "%.1f", arkitROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°) | Reps: \(motionService.romPerRepCount)")
         }
     }
 
