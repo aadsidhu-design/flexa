@@ -56,6 +56,9 @@ struct OptimizedFruitSlicerGameView: View {
             .statusBarHidden()
             .toolbar(.hidden, for: .navigationBar)
             .onAppear {
+                // Keep screen on during game
+                UIApplication.shared.isIdleTimerDisabled = true
+                
                 if !isGameActive && !showingAnalyzing && !showingResults && !gameHasEnded {
                     setupGame()
                 }
@@ -70,8 +73,8 @@ struct OptimizedFruitSlicerGameView: View {
                             let encoded = payload["sessionDataJSON"] as? Data
                         else {
                             return motionService.getFullSessionData(
-                                overrideScore: self.gameScene?.score ?? self.motionService.currentReps * 10,
-                                overrideExerciseType: GameType.fruitSlicer.displayName
+                                overrideExerciseType: GameType.fruitSlicer.displayName,
+                                overrideScore: self.gameScene?.score ?? self.motionService.currentReps * 10
                             )
                         }
                         let decoder = JSONDecoder()
@@ -80,8 +83,8 @@ struct OptimizedFruitSlicerGameView: View {
                             return decoded
                         }
                         return motionService.getFullSessionData(
-                            overrideScore: self.gameScene?.score ?? self.motionService.currentReps * 10,
-                            overrideExerciseType: GameType.fruitSlicer.displayName
+                            overrideExerciseType: GameType.fruitSlicer.displayName,
+                            overrideScore: self.gameScene?.score ?? self.motionService.currentReps * 10
                         )
                     }()
 
@@ -130,6 +133,9 @@ struct OptimizedFruitSlicerGameView: View {
         FlexaLog.motion.info("🎮 [FruitSlicer] Starting cleanup - motionService active: \(motionService.isSessionActive), ARKit running: \(motionService.isARKitRunning)")
         isGameActive = false
         
+        // Re-enable idle timer (allow screen to sleep)
+        UIApplication.shared.isIdleTimerDisabled = false
+        
         // Clean up scene resources
         if let scene = gameScene {
             scene.removeAllActions()
@@ -158,12 +164,15 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     private var initialRoll: Double?
     private var slicerBaseY: CGFloat = 150
     private var pendulumVelocity: Double = 0.0
-    private var pendulumHistory: [Double] = []
-    private var lastPendulumPeak: Double = 0.0
     private var lastUpdateTime: TimeInterval = 0
     private var currentOrientation: UIDeviceOrientation = UIDevice.current.orientation
     private var imuRetryCount = 0
     private let imuMaxRetries = 30
+    
+    // Direction-change rep detection
+    private var lastPendulumDirection: Int = 0  // -1 (backward), 0 (neutral), 1 (forward)
+    private var lastDirectionChangeTime: TimeInterval = 0
+    private let repCooldown: TimeInterval = 0.3  // Minimum time between reps (300ms)
     
     override func didMove(to view: SKView) {
         backgroundColor = SKColor.black
@@ -189,6 +198,11 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         
         // Set game as active to enable fruit spawning
         isGameActive = true
+        
+        // Reset direction tracking for rep detection
+        lastPendulumDirection = 0
+        lastDirectionChangeTime = 0
+        pendulumVelocity = 0.0
         
         // Start spawning fruits with shorter intervals for more action
         let spawnAction = SKAction.sequence([
@@ -248,8 +262,6 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
                 createSliceEffect(at: fruitNode.position, isGood: true)
                 fruitNode.removeFromParent()
                 score += 10
-                
-                // Do not record ROM per slice — rep detector will add one ROM per completed rep
                 
                 // Brief slicer flash for feedback
                 if let slicer = childNode(withName: "slicer") as? SKShapeNode {
@@ -442,6 +454,9 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         // Apply damping to prevent runaway velocity
         pendulumVelocity *= 0.95
         
+        // Detect direction change for rep counting
+        detectDirectionChangeRep(acceleration: upDownAccel)
+        
         // Map velocity to screen position
         let screenHeight = size.height
         let padding: CGFloat = 100
@@ -472,8 +487,46 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         // Update slicer position
         slicer.position = CGPoint(x: size.width / 2, y: interpolatedY)
         
-        // Track pendulum ROM based on Y-axis movement
-        trackPendulumROM(forwardAccel: upDownAccel)
+    }
+    
+    private func detectDirectionChangeRep(acceleration: Double) {
+        // Determine current direction: 1 (forward/positive), -1 (backward/negative)
+        let currentDirection: Int = acceleration > 0.05 ? 1 : (acceleration < -0.05 ? -1 : lastPendulumDirection)
+        
+        // Skip if direction is neutral or hasn't changed
+        guard currentDirection != 0 && lastPendulumDirection != 0 && lastPendulumDirection != currentDirection else {
+            // Initialize or neutral state
+            if lastPendulumDirection == 0 && currentDirection != 0 {
+                lastPendulumDirection = currentDirection
+            }
+            return
+        }
+        
+        // Check cooldown to avoid multiple reps in quick succession
+        let currentTime = CACurrentMediaTime()
+        guard currentTime - lastDirectionChangeTime >= repCooldown else {
+            return
+        }
+        
+        // Direction change detected!
+        lastPendulumDirection = currentDirection
+        lastDirectionChangeTime = currentTime
+        
+        // Record the rep with motion service
+        recordRepForFruitSlicer()
+    }
+    
+    private func recordRepForFruitSlicer() {
+        guard let motionService = motionService else { return }
+        
+        let currentROM = motionService.currentROM
+        let minimumThreshold = motionService.getMinimumROMThreshold(for: .fruitSlicer)
+        
+        // Only count as rep if ROM meets threshold
+        if currentROM >= minimumThreshold {
+            motionService.addRomPerRep(currentROM)
+            FlexaLog.game.info("🍎 [FruitSlicer] Rep from direction change | ROM: \(String(format: "%.1f", currentROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°) | Reps: \(motionService.romPerRepCount)")
+        }
     }
 
     // MARK: - Orientation Handling
@@ -517,40 +570,7 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         }
     }
     
-    private func trackROMForSlice() {
-        // ROM tracking is handled by the standard motion service ROM calculation
-        guard let motionService = motionService else { return }
-        
-        let currentROM = motionService.currentROM
-        let minimumThreshold = motionService.getMinimumROMThreshold(for: .fruitSlicer)
-        if currentROM >= minimumThreshold { // Use standardized ROM threshold
-            motionService.addRomPerRep(currentROM)
-            FlexaLog.game.info("🍎 [FruitSlicer] Slice ROM: \(String(format: "%.1f", currentROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°, total slices: \(motionService.romPerRepCount))")
-        }
-    }
-    
-    private func trackPendulumROM(forwardAccel: Double) {
-        // Track pendulum motion for ROM calculation
-        pendulumHistory.append(forwardAccel)
-        if pendulumHistory.count > 120 { // Keep 2 seconds at 60Hz
-            pendulumHistory.removeFirst()
-        }
-        
-        // Detect peaks in pendulum motion
-        if pendulumHistory.count > 10 {
-            let recent = Array(pendulumHistory.suffix(10))
-            let avg = recent.reduce(0, +) / Double(recent.count)
-            
-            // Peak detection: significant change from average
-            if abs(avg - lastPendulumPeak) > 0.2 {
-                // Calculate ROM based on pendulum arc
-                let romDegrees = abs(avg - lastPendulumPeak) * 90.0 // Scale to degrees
-                motionService?.updateCurrentROM(min(180, romDegrees))
-                lastPendulumPeak = avg
-            }
-        }
-    }
-    
+
     private func endGame() {
         isGameActive = false
         
@@ -566,8 +586,8 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         // Build rich payload for CleanGameHostView consumers
         if let ms = motionService {
             let data = ms.getFullSessionData(
-                overrideScore: score,
-                overrideExerciseType: GameType.fruitSlicer.displayName
+                overrideExerciseType: GameType.fruitSlicer.displayName,
+                overrideScore: score
             )
             ms.stopSession()
 
