@@ -197,7 +197,6 @@ struct ModernGameCard: View {
     }
 }
 
-#if DEBUG
 struct DiagnosticCard: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -240,7 +239,6 @@ struct DiagnosticCard: View {
         )
     }
 }
-#endif
 
 
 enum GameType: String, CaseIterable, Identifiable {
