@@ -756,6 +756,9 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                     // For handheld games, romHistory = romPerRep
                     if !self.isCameraExercise {
                         self.romHistory.append(rom)
+                        // Also record SPARC value for this rep to populate smoothness graph
+                        let sparc = self.sparcService.getCurrentSPARC()
+                        self.sparcHistory.append(sparc)
                     }
                 }
     
