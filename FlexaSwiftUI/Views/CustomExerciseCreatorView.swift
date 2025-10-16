@@ -22,21 +22,21 @@ struct CustomExerciseCreatorView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     // Header
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Create custom exercise")
-                            .font(.system(size: 32, weight: .bold, design: .default))
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Create Exercise")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
+                            .tracking(0.2)
                         
-                        Text("Tell us about a movement you want to track")
-                            .font(.system(size: 16, weight: .regular, design: .default))
+                        Text("Describe the movement you want to track")
+                            .font(.system(size: 15, weight: .regular, design: .default))
                             .foregroundColor(.secondary)
+                            .lineLimit(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
-                    
-                    Divider()
-                        .padding(.horizontal, 20)
+                    .padding(.top, 28)
+                    .padding(.bottom, 28)
                     
                     VStack(spacing: 32) {
                         // Input Section
@@ -45,20 +45,6 @@ struct CustomExerciseCreatorView: View {
                             isFocused: _isEditorFocused
                         )
                         .padding(.horizontal, 20)
-                        
-                        // Example Prompts Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Quick start")
-                                .font(.system(size: 17, weight: .semibold, design: .default))
-                                .foregroundColor(.primary)
-                                .padding(.horizontal, 20)
-                            
-                            ExamplePromptGridSimple { prompt in
-                                exerciseDescription = prompt
-                                isEditorFocused = false
-                            }
-                            .padding(.horizontal, 20)
-                        }
                         
                         // Analyze Button
                         AnalyzeButtonSimple(isAnalyzing: isAnalyzing, isDisabled: exerciseDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
@@ -85,12 +71,9 @@ struct CustomExerciseCreatorView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .fontWeight(.semibold)
-                        Text("Back")
-                    }
-                    .foregroundColor(.blue)
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.blue)
                 }
             }
         }
@@ -152,19 +135,21 @@ struct PromptEditorCardSimple: View {
     @FocusState var isFocused: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Exercise description")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Description")
                 .font(.system(size: 15, weight: .semibold, design: .default))
                 .foregroundColor(.secondary)
+                .tracking(0.1)
             
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color(UIColor.secondarySystemBackground))
+                    .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
                 
                 TextEditor(text: $text)
                     .focused($isFocused)
                     .frame(minHeight: 140)
-                    .padding(12)
+                    .padding(14)
                     .font(.system(size: 16, weight: .regular, design: .default))
                     .foregroundColor(.primary)
                     .background(Color.clear)
@@ -173,7 +158,7 @@ struct PromptEditorCardSimple: View {
                         if text.isEmpty && !isFocused {
                             Text("For example: Swing my phone side to side like a pendulum")
                                 .foregroundColor(Color(UIColor.tertiaryLabel))
-                                .padding(12)
+                                .padding(14)
                                 .font(.system(size: 16, weight: .regular, design: .default))
                         }
                     }
@@ -251,20 +236,21 @@ struct AnalyzeButtonSimple: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 if isAnalyzing {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.9)
+                        .scaleEffect(0.85)
                 } else {
                     Image(systemName: "wand.and.stars")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                 }
-                Text(isAnalyzing ? "Analyzing..." : "Analyze with AI")
-                    .font(.system(size: 16, weight: .semibold, design: .default))
+                Text(isAnalyzing ? "Analyzing..." : "Analyze")
+                    .font(.system(size: 17, weight: .semibold, design: .default))
+                    .tracking(0.2)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 16)
             .backgroundColor(isDisabled ? Color(UIColor.tertiarySystemBackground) : Color.blue)
             .foregroundColor(isDisabled ? .secondary : .white)
             .cornerRadius(10)

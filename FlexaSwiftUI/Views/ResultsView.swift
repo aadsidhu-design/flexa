@@ -27,14 +27,24 @@ struct ResultsView: View {
     var body: some View {
         VStack(spacing: 0) {
             // AI Score at top
-            VStack(spacing: 16) {
-                Text("\(displayedAIScore)")
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+            VStack(spacing: 20) {
+                VStack(spacing: 16) {
+                    Text("\(displayedAIScore)")
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    
+                    Text("AI Score")
+                        .font(.headline)
+                        .foregroundColor(.gray)
+                }
                 
-                Text("AI Score")
-                    .font(.headline)
-                    .foregroundColor(.gray)
+                // Performance Metrics
+                HStack(spacing: 16) {
+                    MetricPill(label: "Reps", value: String(sessionData.reps), icon: "repeat")
+                    MetricPill(label: "Avg ROM", value: String(format: "%.0f°", sessionData.averageROM), icon: "arrow.up.and.down")
+                    MetricPill(label: "Smoothness", value: String(format: "%.0f", sessionData.sparcScore), icon: "waveform.path")
+                }
+                .padding(.horizontal, 20)
             }
             .padding(.top, 40)
             .padding(.bottom, 20)
@@ -378,6 +388,33 @@ struct TabButton: View {
         }
         .padding(.vertical, 10)
         .background(isSelected ? Color.white.opacity(0.1) : Color.clear)
+    }
+}
+
+struct MetricPill: View {
+    let label: String
+    let value: String
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.blue)
+            
+            Text(value)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+            
+            Text(label)
+                .font(.system(size: 11, weight: .medium, design: .default))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(12)
     }
 }
 
