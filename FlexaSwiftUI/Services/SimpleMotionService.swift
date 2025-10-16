@@ -1382,7 +1382,6 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     
     private func startCameraGameSession(gameType: GameType) throws {
         FlexaLog.motion.info("📹 [CAMERA-GAME] Starting camera game session for \(gameType.displayName)")
-        sparcService.endHandheldSession()
         resetPoseSmoothingState()
         
     // Camera games ONLY use BlazePose camera pose detection
@@ -1506,24 +1505,18 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         
         // Determine motion profiles for ROM/SPARC pipelines
         let motionProfile: HandheldROMCalculator.MotionProfile
-        let sparcProfile: SPARCCalculationService.HandheldProfile
         switch gameType {
         case .fruitSlicer, .fanOutFlame:
             motionProfile = .pendulum
-            sparcProfile = .pendulum
         case .followCircle:
             motionProfile = .circular
-            sparcProfile = .circular
         case .makeYourOwn:
             motionProfile = .pendulum
-            sparcProfile = .pendulum
         default:
             motionProfile = .pendulum
-            sparcProfile = .pendulum
         }
 
         handheldROMCalculator.startSession(profile: motionProfile)
-        sparcService.startHandheldSession(profile: sparcProfile)
         
         FlexaLog.motion.info("🎯 [Handheld] Session started for \(gameType.displayName)")
 
@@ -1609,7 +1602,6 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         arkitTracker.stop()
         
         // End SPARC service session
-    sparcService.endHandheldSession()
         _ = sparcService.endSession() // ignore result
         
         // Stop performance monitoring and log results
@@ -1813,30 +1805,18 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         let trajectories = handheldROMCalculator.getRepTrajectories()
         guard !trajectories.isEmpty else { return nil }
 
-        guard let summary = sparcService.computeHandheldSPARCFromTrajectories(trajectories) else {
-            return nil
-        }
-
-        let timelinePoints: [SPARCPoint] = summary.timelinePoints.map { point in
-            SPARCPoint(sparc: point.value, timestamp: point.timestamp)
-        }
-
-        offlineHandheldSparcPerRep = summary.perRepScores
-        offlineHandheldSparcAverage = summary.averageScore
-        offlineHandheldSparcTimeline = timelinePoints
-
-        sparcHistory.removeAll()
-        summary.perRepScores.forEach { sparcHistory.append($0) }
-
-        DispatchQueue.main.async { [weak self] in
-            self?._sparcService.currentSPARC = summary.averageScore
-            self?._sparcService.averageSPARC = summary.averageScore
+        // SPARC computation for handheld games
+        let sparcScore = sparcService.getCurrentSPARC()
+        
+        offlineHandheldSparcAverage = sparcScore
+        offlineHandheldSparcTimeline = sparcService.getSPARCDataPoints().map { 
+            SPARCPoint(sparc: $0.sparcValue, timestamp: $0.timestamp)
         }
 
         return HandheldSPARCAnalysisResult(
-            perRep: summary.perRepScores,
-            average: summary.averageScore,
-            timeline: timelinePoints
+            perRep: [sparcScore],
+            average: sparcScore,
+            timeline: offlineHandheldSparcTimeline
         )
     }
 

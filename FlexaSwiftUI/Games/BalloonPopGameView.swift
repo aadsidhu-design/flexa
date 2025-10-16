@@ -11,6 +11,7 @@ struct BalloonPopGameView: View {
     @State private var showingAnalyzing = false
     @State private var showingResults = false
     @State private var sessionData: ExerciseSessionData?
+    @State private var hasInitializedGame = false
     @State private var reps: Int = 0
     @State private var isInPosition = false
     @State private var leftHandPosition: CGPoint = .zero
@@ -96,12 +97,24 @@ struct BalloonPopGameView: View {
             // No UI overlay - just game
         }
         .onAppear {
+            // Keep screen on during game
+            UIApplication.shared.isIdleTimerDisabled = true
+            
             screenSize = geometry.size
+            
+            guard !hasInitializedGame else {
+                FlexaLog.motion.info("🔁 [BalloonPop] View reappeared - skipping automatic setup (already initialized)")
+                return
+            }
+            hasInitializedGame = true
             FlexaLog.game.info("🔍 [BalloonPop] onAppear called - setting up game")
             setupGame()
         }
         }
         .onDisappear {
+            // Re-enable idle timer (allow screen to sleep)
+            UIApplication.shared.isIdleTimerDisabled = false
+            
             motionService.stopSession()
             cleanupGame()
         }
@@ -113,6 +126,7 @@ struct BalloonPopGameView: View {
     
     private func setupGame() {
     FlexaLog.game.info("🔍 [BalloonPop] setupGame called - starting game session")
+    motionService.preferredCameraJoint = .elbow
     motionService.startGameSession(gameType: .balloonPop)
     FlexaLog.game.info("🔍 [BalloonPop] Game session started")
     resetGame()
@@ -182,72 +196,67 @@ struct BalloonPopGameView: View {
     
     private func updateHandPositions() {
         guard let keypoints = motionService.poseKeypoints else { 
-            // NO POSE DATA - hide pins
+            // NO POSE DATA - hide pin
             leftHandPosition = .zero
             rightHandPosition = .zero
             return 
         }
         
-        // Update hand positions from VisionPoseProvider with DIRECT mapping (minimal smoothing)
-        if let leftWrist = keypoints.leftWrist {
-            let mapped = CoordinateMapper.mapVisionPointToScreen(leftWrist, previewSize: screenSize)
-            
-            // DETAILED COORDINATE LOGGING
-            print("📍 [BalloonPop-COORDS] LEFT RAW Vision: x=\(String(format: "%.4f", leftWrist.x)), y=\(String(format: "%.4f", leftWrist.y))")
-            print("📍 [BalloonPop-COORDS] LEFT MAPPED Screen: x=\(String(format: "%.1f", mapped.x)), y=\(String(format: "%.1f", mapped.y)) (preview: \(screenSize.width)×\(screenSize.height))")
-            
-            // If position is zero (initial), seed it to mapped to avoid large jump
-            if leftHandPosition == .zero { 
-                leftHandPosition = mapped
-                print("📍 [BalloonPop-COORDS] LEFT initial position set to: \(mapped)")
+        // AUTO-DETECT which arm is being used (phoneArm from VisionPoseProvider)
+        activeArm = keypoints.phoneArm
+        
+        // ONLY track the active arm's wrist - ignore the other hand completely
+        let activeWrist = (activeArm == .left) ? keypoints.leftWrist : keypoints.rightWrist
+        
+        guard let wrist = activeWrist else {
+            // Active wrist not visible - hide pin
+            if activeArm == .left {
+                leftHandPosition = .zero
             } else {
-                // VERY LIGHT smoothing for maximum responsiveness - pin sticks to wrist
-                let alpha: CGFloat = 0.75 // Higher alpha = more responsive, sticks better
+                rightHandPosition = .zero
+            }
+            return
+        }
+        
+        // Map wrist position to screen
+        let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+        
+        // Update ONLY the active hand position
+        if activeArm == .left {
+            // Initialize or smooth
+            if leftHandPosition == .zero {
+                leftHandPosition = mapped
+            } else {
+                // High alpha = very responsive, pin sticks to wrist
+                let alpha: CGFloat = 0.85
                 leftHandPosition = CGPoint(
                     x: leftHandPosition.x * (1 - alpha) + mapped.x * alpha,
                     y: leftHandPosition.y * (1 - alpha) + mapped.y * alpha
                 )
             }
-            
-            print("📍 [BalloonPop-COORDS] LEFT final pin position: x=\(String(format: "%.1f", leftHandPosition.x)), y=\(String(format: "%.1f", leftHandPosition.y))")
-
-            // Feed SPARC with mapped preview coordinates for consistent smoothness analysis
-            motionService.sparcService.addVisionMovement(timestamp: Date().timeIntervalSince1970, position: mapped)
+            // Hide inactive hand
+            rightHandPosition = .zero
         } else {
-            leftHandPosition = .zero
-        }
-        
-        if let rightWrist = keypoints.rightWrist {
-            let mapped = CoordinateMapper.mapVisionPointToScreen(rightWrist, previewSize: screenSize)
-            
-            // DETAILED COORDINATE LOGGING
-            print("📍 [BalloonPop-COORDS] RIGHT RAW Vision: x=\(String(format: "%.4f", rightWrist.x)), y=\(String(format: "%.4f", rightWrist.y))")
-            print("📍 [BalloonPop-COORDS] RIGHT MAPPED Screen: x=\(String(format: "%.1f", mapped.x)), y=\(String(format: "%.1f", mapped.y))")
-            
-            if rightHandPosition == .zero { 
+            // Initialize or smooth
+            if rightHandPosition == .zero {
                 rightHandPosition = mapped
-                print("📍 [BalloonPop-COORDS] RIGHT initial position set to: \(mapped)")
             } else {
-                let alpha: CGFloat = 0.75
+                // High alpha = very responsive, pin sticks to wrist
+                let alpha: CGFloat = 0.85
                 rightHandPosition = CGPoint(
                     x: rightHandPosition.x * (1 - alpha) + mapped.x * alpha,
                     y: rightHandPosition.y * (1 - alpha) + mapped.y * alpha
                 )
             }
-            
-            print("📍 [BalloonPop-COORDS] RIGHT final pin position: x=\(String(format: "%.1f", rightHandPosition.x)), y=\(String(format: "%.1f", rightHandPosition.y))")
-
-            motionService.sparcService.addVisionMovement(timestamp: Date().timeIntervalSince1970, position: mapped)
-        } else {
-            rightHandPosition = .zero
+            // Hide inactive hand
+            leftHandPosition = .zero
         }
         
-        // Determine active arm
-        activeArm = keypoints.phoneArm
+        // Feed SPARC with active wrist position only
+        let wristPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
+        motionService.sparcService.addCameraMovement(position: wristPos, timestamp: Date().timeIntervalSince1970)
         
-        print("📍 [BalloonPop-COORDS] Active arm: \(activeArm == .left ? "LEFT" : "RIGHT")")
-        
-        // Calculate elbow ROM for rep detection
+        // Calculate elbow ROM for rep detection (use active arm only)
         let currentElbowAngle = calculateCurrentElbowAngle(keypoints: keypoints)
         if currentElbowAngle > 0 {
             detectElbowExtensionRep(currentAngle: currentElbowAngle)
@@ -281,10 +290,13 @@ struct BalloonPopGameView: View {
             // Update ROM using validated Vision pathway
             isInPosition = false
             
-            // Calculate ROM for this rep using standardized validation
-            let repROM = motionService.validateAndNormalizeROM(abs(lastElbowAngle - currentAngle))
+            // Calculate ROM for this rep using live elbow ROM from motion service
+            var repROM = motionService.currentROM
+            if repROM <= 0 {
+                repROM = motionService.validateAndNormalizeROM(abs(lastElbowAngle - currentAngle))
+            }
             if repROM >= minimumThreshold {
-                motionService.recordVisionRepCompletion(rom: repROM)
+                motionService.recordCameraRepCompletion(rom: repROM)
                 reps = motionService.currentReps
                 print("🎈 [BalloonPop] Rep completed! Total reps: \(reps), ROM: \(String(format: "%.1f", repROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°)")
             }
@@ -389,8 +401,8 @@ struct BalloonPopGameView: View {
         balloonSpawnTimer?.invalidate()
         
         let sessionSnapshot = motionService.getFullSessionData(
-            overrideScore: score,
-            overrideExerciseType: GameType.balloonPop.displayName
+            overrideExerciseType: GameType.balloonPop.displayName,
+            overrideScore: score
         )
         var sessionData = sessionSnapshot
 

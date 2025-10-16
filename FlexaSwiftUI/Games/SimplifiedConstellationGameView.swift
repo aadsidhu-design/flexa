@@ -23,8 +23,13 @@ struct ArmRaisesGameView: View {
     @State private var lastDetectedPointIndex: Int?
     @State private var lastDetectionTimestamp: TimeInterval = 0
     @State private var isHoveringOverCurrentTarget: Bool = false
-    @State private var screenSize: CGSize = UIScreen.main.bounds.size
-    private let maxGameDuration: TimeInterval = 60
+    @State private var previousPosition: CGPoint = .zero
+        @State private var lastIncorrectTime: Date? = nil
+    @State private var screenSize: CGSize = .zero
+    @State private var hasInitializedGame = false
+    // Live drawing state
+    @State private var activeLineStartIndex: Int?
+    @State private var activeLineEndIndex: Int?
 
     var body: some View {
         Group {
@@ -62,22 +67,22 @@ struct ArmRaisesGameView: View {
                             .stroke(Color.cyan, lineWidth: 4)
                             .opacity(0.9)
                         }
-                        
-                        // Dynamic connection line - ONLY shows when hovering near an unconnected dot
-                        if isGameActive && connectedPoints.count > 0 && isHoveringOverCurrentTarget && handPosition != .zero {
-                            // Find which dot we're hovering over
-                            if let (nearestIndex, _) = nearestPatternPoint(to: handPosition, within: targetHitTolerance()),
-                               !connectedPoints.contains(nearestIndex) {
-                                // Draw line from LAST connected dot to hand position
-                                Path { path in
-                                    let lastConnectedDot = currentPattern[connectedPoints.last!]
-                                    path.move(to: lastConnectedDot)
+
+                        // Persist active line from last fixed point to hand
+                        if let startIdx = activeLineStartIndex,
+                           connectedPoints.contains(startIdx),
+                           handPosition != .zero {
+                            Path { path in
+                                let startPoint = currentPattern[startIdx]
+                                path.move(to: startPoint)
+                                if let endIdx = activeLineEndIndex,
+                                   connectedPoints.contains(endIdx) {
+                                    path.addLine(to: currentPattern[endIdx])
+                                } else {
                                     path.addLine(to: handPosition)
                                 }
-                                .stroke(Color.cyan, lineWidth: 3)
-                                .opacity(0.6)
-                                .animation(.easeInOut(duration: 0.1), value: handPosition)
                             }
+                            .stroke(Color.cyan.opacity(0.75), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         }
                     
                     // Hand tracking circle - only show when wrist is detected
@@ -150,16 +155,6 @@ struct ArmRaisesGameView: View {
                                 .padding(.top, 12)
                         }
 
-                        Text(formattedTimeRemaining())
-                            .font(.system(.title3, design: .rounded).monospacedDigit())
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(14)
-                            .foregroundColor(.white)
-                            .padding(.top, 8)
-
                         Spacer()
                     }
                     }
@@ -170,10 +165,21 @@ struct ArmRaisesGameView: View {
             }
         }
         .onAppear {
+            // Keep screen on during game
+            UIApplication.shared.isIdleTimerDisabled = true
+            
+            guard !hasInitializedGame else {
+                FlexaLog.motion.info("🔁 [ArmRaises] View reappeared - skipping automatic setup (already initialized)")
+                return
+            }
+            hasInitializedGame = true
             FlexaLog.game.info("🔍 [ArmRaises] onAppear called - setting up game")
             setupGame()
         }
         .onDisappear {
+            // Re-enable idle timer (allow screen to sleep)
+            UIApplication.shared.isIdleTimerDisabled = false
+            
             cleanup()
         }
         .onChange(of: motionService.isCameraObstructed) { _ in
@@ -189,13 +195,13 @@ struct ArmRaisesGameView: View {
 
     private func setupGame() {
         FlexaLog.game.info("🔍 [ArmRaises] setupGame called - starting game session")
+        motionService.preferredCameraJoint = .armpit
         motionService.startGameSession(gameType: .constellation)
         FlexaLog.game.info("🔍 [ArmRaises] Game session started")
         FlexaLog.game.info("🔍 [ArmRaises] Generating new pattern...")
         generateNewPattern()
         FlexaLog.game.info("🔍 [ArmRaises] Pattern generated with \(currentPattern.count) points")
         FlexaLog.game.info("🔍 [ArmRaises] Starting game timer...")
-        gameTime = 0
         startGameTimer()
         isGameActive = true
         FlexaLog.game.info("🔍 [ArmRaises] Game is now active!")
@@ -231,11 +237,6 @@ struct ArmRaisesGameView: View {
         evaluateTargetHit()
         gameTime += 1.0/60.0
         FlexaLog.game.debug("⏱ [ArmRaises] Game tick - time: \(gameTime), score: \(score), completedPatterns: \(completedPatterns)")
-        if gameTime >= maxGameDuration {
-            FlexaLog.game.info("⏰ [ArmRaises] 60-second limit reached - stopping game")
-            endGame()
-            return
-        }
         // End game ONLY when 3 patterns are completed (no time limit)
         if completedPatterns >= 3 {
             FlexaLog.game.info("🎯 [ArmRaises] 3 patterns completed - stopping game")
@@ -257,10 +258,8 @@ struct ArmRaisesGameView: View {
         let activeSide = poseKeypoints.phoneArm
         let activeWrist = (activeSide == .left) ? poseKeypoints.leftWrist : poseKeypoints.rightWrist
         
-        if let wrist = activeWrist {
-            let previousPosition = handPosition
-            // Map using coordinate mapper with better smoothing for precise control
-            let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, previewSize: screenSize)
+        if let wrist = motionService.poseKeypoints?.leftWrist {
+            let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
             
             // DETAILED COORDINATE LOGGING
             print("🎯 [ArmRaises-COORDS] RAW Vision: x=\(String(format: "%.4f", wrist.x)), y=\(String(format: "%.4f", wrist.y))")
@@ -293,10 +292,11 @@ struct ArmRaisesGameView: View {
             }
 
             // Add SPARC data based on mapped preview coordinates (use screen-space positions)
-            motionService.sparcService.addVisionMovement(
-                timestamp: Date().timeIntervalSince1970,
-                position: mapped
-            )
+                let wristPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
+                motionService.sparcService.addCameraMovement(
+                    position: wristPos,
+                    timestamp: Date().timeIntervalSince1970
+                )
         } else {
             // NO WRIST FOR ACTIVE ARM - hide circle
             handPosition = .zero
@@ -319,42 +319,43 @@ struct ArmRaisesGameView: View {
         
         // Allow starting from ANY dot (not just index 0)
         if connectedPoints.isEmpty {
-            // First dot - user can select any dot to start
-            if let lastIndex = lastDetectedPointIndex,
-               lastIndex == index,
-               now - lastDetectionTimestamp < 0.4 {
-                return // Debounce
-            }
-            lastDetectedPointIndex = index
-            lastDetectionTimestamp = now
-            
-            // Start the constellation from this dot
-            handleCorrectHit(for: index)
-            isUserInteracting = true
-            isHoveringOverCurrentTarget = true
-            print("🌟 [ArmRaises] Starting constellation from dot #\(index)")
-            return
-        }
-        
-        // Check if hovering over an unconnected dot
-        if !connectedPoints.contains(index) {
-            isHoveringOverCurrentTarget = true
-            
-            // Debounce hit detection
             if let lastIndex = lastDetectedPointIndex,
                lastIndex == index,
                now - lastDetectionTimestamp < 0.4 {
                 return
             }
-            
             lastDetectedPointIndex = index
             lastDetectionTimestamp = now
-            
-            // Connect to this new dot (point-to-point is a rep!)
+
             handleCorrectHit(for: index)
             isUserInteracting = true
+            isHoveringOverCurrentTarget = true
+            activeLineStartIndex = index
+            activeLineEndIndex = nil
+            print("🌟 [ArmRaises] Starting constellation from dot #\(index)")
+            return
+        }
+
+        if let startIdx = activeLineStartIndex,
+           connectedPoints.contains(startIdx),
+           !connectedPoints.contains(index) {
+            isHoveringOverCurrentTarget = true
+
+            if let lastIndex = lastDetectedPointIndex,
+               lastIndex == index,
+               now - lastDetectionTimestamp < 0.35 {
+                return
+            }
+
+            lastDetectedPointIndex = index
+            lastDetectionTimestamp = now
+
+            activeLineEndIndex = index
+            handleCorrectHit(for: index)
+            isUserInteracting = true
+            activeLineStartIndex = index
+            activeLineEndIndex = nil
         } else {
-            // Already connected - just hovering
             isHoveringOverCurrentTarget = connectedPoints.contains(index)
         }
     }
@@ -372,11 +373,14 @@ struct ArmRaisesGameView: View {
             if connectedPoints.count > 1 {
                 // Record rep for this connection
                 if let keypoints = motionService.poseKeypoints {
-                    let rawROM = keypoints.getArmpitROM(side: keypoints.phoneArm)
-                    let normalized = motionService.validateAndNormalizeROM(rawROM)
+                    var normalized = motionService.currentROM
+                    if normalized <= 0 {
+                        let rawROM = keypoints.getArmpitROM(side: keypoints.phoneArm)
+                        normalized = motionService.validateAndNormalizeROM(rawROM)
+                    }
                     let minimumThreshold = motionService.getMinimumROMThreshold(for: .constellation)
                     if normalized >= minimumThreshold {
-                        motionService.recordVisionRepCompletion(rom: normalized)
+                        motionService.recordCameraRepCompletion(rom: normalized)
                         print("🎯 [ArmRaises] Rep recorded! Total reps: \(motionService.currentReps), ROM: \(String(format: "%.1f", normalized))°")
                     }
                 }
@@ -439,11 +443,14 @@ struct ArmRaisesGameView: View {
         
         // Calculate ROM for this pattern completion (count as one rep)
         if let keypoints = motionService.poseKeypoints {
-            let rawROM = keypoints.getArmpitROM(side: keypoints.phoneArm)
-            let normalized = motionService.validateAndNormalizeROM(rawROM)
+            var normalized = motionService.currentROM
+            if normalized <= 0 {
+                let rawROM = keypoints.getArmpitROM(side: keypoints.phoneArm)
+                normalized = motionService.validateAndNormalizeROM(rawROM)
+            }
             let minimumThreshold = motionService.getMinimumROMThreshold(for: .constellation)
             if normalized >= minimumThreshold {
-                motionService.recordVisionRepCompletion(rom: normalized)
+                motionService.recordCameraRepCompletion(rom: normalized)
                 completedPatterns = motionService.currentReps
                 print("🌟 [ArmRaises] Pattern completed! Patterns: \(completedPatterns), ROM: \(String(format: "%.1f", normalized))° (threshold: \(String(format: "%.1f", minimumThreshold))°)")
             } else {
@@ -468,8 +475,12 @@ struct ArmRaisesGameView: View {
         wrongConnectionCount = 0
         lastDetectedPointIndex = nil
         lastDetectionTimestamp = 0
+    activeLineStartIndex = nil
+    activeLineEndIndex = nil
         isUserInteracting = false
         isHoveringOverCurrentTarget = false
+    activeLineStartIndex = nil
+    activeLineEndIndex = nil
         clearIncorrectFeedback()
         
         let centerX = screenSize.width / 2
@@ -515,8 +526,8 @@ struct ArmRaisesGameView: View {
         gameTimer?.invalidate()
         gameTimer = nil
         let snapshot = motionService.getFullSessionData(
-            overrideScore: score,
-            overrideExerciseType: GameType.constellationMaker.displayName
+            overrideExerciseType: GameType.constellationMaker.displayName,
+            overrideScore: score
         )
         var sessionData = snapshot
         if sessionData.romHistory.isEmpty {
@@ -567,10 +578,4 @@ struct ArmRaisesGameView: View {
         }
     }
 
-    private func formattedTimeRemaining() -> String {
-        let remaining = max(0, maxGameDuration - gameTime)
-        let minutes = Int(remaining) / 60
-        let seconds = Int(remaining) % 60
-        return String(format: "%01d:%02d", minutes, seconds)
-    }
 }

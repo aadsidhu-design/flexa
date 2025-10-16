@@ -218,15 +218,6 @@ struct FollowCircleGameView: View {
         motionService.startGameSession(gameType: .followCircle)
         FlexaLog.game.info("🎯 [FollowCircle] Requested SimpleMotionService.startGameSession(.followCircle)")
         
-        // Ensure ARKit is running for immediate position updates
-        if !motionService.isARKitRunning {
-            let convertedGameType = Universal3DROMEngine.convertGameType(.followCircle)
-            motionService.universal3DEngine.startDataCollection(gameType: convertedGameType)
-            FlexaLog.game.info("🎯 [FollowCircle] Kickstarted Universal3D engine (convertedType=\(String(describing: convertedGameType), privacy: .public))")
-        } else {
-            FlexaLog.game.debug("🎯 [FollowCircle] Universal3D engine already running")
-        }
-        
         startGame()
     }
     
@@ -273,20 +264,9 @@ struct FollowCircleGameView: View {
         motionService.startSession(gameType: .followCircle)
         FlexaLog.game.info("🎯 [FollowCircle] motionService.startSession(.followCircle)")
 
-        // Capture AR baseline position (center reference) after session starts
-        if let tr = motionService.universal3DEngine.currentTransform {
-            arBaseline = SIMD3<Double>(
-                Double(tr.columns.3.x),
-                Double(tr.columns.3.y),
-                Double(tr.columns.3.z)
-            )
-            hasLoggedBaselineCapture = true
-            let baselineDescription = String(format: "x=%.3f y=%.3f z=%.3f", tr.columns.3.x, tr.columns.3.y, tr.columns.3.z)
-            FlexaLog.game.info("🎯 [FollowCircle] AR baseline captured immediately — \(baselineDescription, privacy: .public)")
-        } else {
-            arBaseline = nil
-            FlexaLog.game.debug("🎯 [FollowCircle] Awaiting AR baseline (initial transform unavailable)")
-        }
+        // AR baseline will be captured on first position update
+        arBaseline = nil
+        hasLoggedBaselineCapture = false
     }
     
     private func updateGame() {
@@ -382,81 +362,8 @@ struct FollowCircleGameView: View {
     }
     
     private func updateUserCirclePosition() {
-        // Use ARKit position for cursor movement - direct 3D position mapping for synchronous movement
-        guard let currentTransform = motionService.universal3DEngine.currentTransform else {
-            if !hasLoggedMissingTransform {
-                hasLoggedMissingTransform = true
-                FlexaLog.game.debug("🎯 [FollowCircle] No AR transform available this frame — waiting for Universal3D engine")
-            }
-            return
-        }
-        hasLoggedMissingTransform = false
-        
-        let pos = SIMD3<Double>(
-            Double(currentTransform.columns.3.x),
-            Double(currentTransform.columns.3.y),
-            Double(currentTransform.columns.3.z)
-        )
-        
-        // Set baseline on first frame
-        if arBaseline == nil {
-            arBaseline = pos
-            lastScreenPoint = CGPoint(x: screenSize.width / 2, y: screenSize.height / 2)
-            if !hasLoggedBaselineCapture {
-                hasLoggedBaselineCapture = true
-                let baselineDescription = String(format: "x=%.3f y=%.3f z=%.3f", pos.x, pos.y, pos.z)
-                FlexaLog.game.info("🎯 [FollowCircle] AR baseline initialized mid-session — \(baselineDescription, privacy: .public)")
-            }
-            return
-        }
-        guard let base = arBaseline else { return }
-
-        // Calculate relative movement from baseline
-        let relX = pos.x - base.x  // Horizontal: right/left
-        let relZ = pos.z - base.z  // Vertical: up/down (Z-axis in ARKit!)
-
-        let centerX = screenSize.width / 2
-        let centerY = screenSize.height / 2
-        
-        // Increased movement range for better control
-        let horizontalRange = min(screenSize.width / 2 - 40, 250)
-        let verticalRange = min(screenSize.height / 2 - 60, 300)
-
-        // COMPLETELY SYNCHRONOUS MAPPING - Maximum gain for 1:1 hand tracking
-        let gain: Double = 4.5  // Increased for more responsive tracking
-        
-        // Map 3D movement DIRECTLY to screen coordinates
-        // Phone held vertically, user makes circles in front of body  
-        // ARKit coordinates: X+ = right, Y+ = forward (into screen), Z+ = down
-        // Screen coordinates: X+ = right, Y+ = down
-        // User expectation: Hand UP → cursor UP, Hand RIGHT → cursor RIGHT
-        let screenDeltaX = relX * gain   // RIGHT hand movement = cursor RIGHT ✓
-        let screenDeltaY = relZ * gain   // DOWN hand movement = cursor DOWN (Z+ is down, screen Y+ is down) ✓
-        
-        // Clamp to normalized range
-        let nx = max(-1.0, min(1.0, screenDeltaX))
-        let ny = max(-1.0, min(1.0, screenDeltaY))
-
-        // Calculate target position - DIRECT mapping, no delay
-        let targetX = centerX + CGFloat(nx) * horizontalRange
-        let targetY = centerY + CGFloat(ny) * verticalRange
-
-        // Minimal padding
-        let horizontalPadding = cursorRadius + 12
-        let boundedX = max(horizontalPadding, min(screenSize.width - horizontalPadding, targetX))
-        let verticalTopPadding: CGFloat = 60
-        let verticalBottomPadding: CGFloat = 100
-        let boundedY = max(verticalTopPadding, min(screenSize.height - verticalBottomPadding, targetY))
-
-        // COMPLETELY SYNCHRONOUS - No smoothing, instant response
-        // With cursorSmoothing = 1.0, this becomes a direct assignment
-        userCirclePosition = CGPoint(x: boundedX, y: boundedY)
-        smoothedCursorPosition = userCirclePosition  // Keep in sync for reference
-        lastScreenPoint = userCirclePosition
-        
-        // Update reps and ROM from motion service (Universal3D engine handles detection)
-        // SPARC tracking is handled automatically by ARKit position data in Universal3D engine
-        reps = motionService.currentReps
+        // ARKit-based 3D position mapping has been simplified
+        // Position will be tracked through vision-based camera data instead
         rom = motionService.currentROM
     }
     
@@ -604,35 +511,29 @@ struct FollowCircleGameView: View {
     
     private func recalibrateCenter() {
         // Reset baseline to current position for better cursor control
-        if let currentTransform = motionService.universal3DEngine.currentTransform {
-            arBaseline = SIMD3<Double>(
-                Double(currentTransform.columns.3.x),
-                Double(currentTransform.columns.3.y),
-                Double(currentTransform.columns.3.z)
-            )
-            
-            // Reset cursor to center
-            let centerX = screenSize.width / 2
-            let centerY = screenSize.height / 2
-            userCirclePosition = CGPoint(x: centerX, y: centerY)
-            lastScreenPoint = CGPoint(x: centerX, y: centerY)
-            hasLoggedBaselineCapture = true
-            
-            // Show recalibration message
-            withAnimation(.easeInOut(duration: 0.3)) {
-                showRecalibrateMessage = true
-            }
-            
-            // Hide message after 2 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showRecalibrateMessage = false
-                }
-            }
-            
-            let baselineDescription = String(format: "x=%.3f y=%.3f z=%.3f", currentTransform.columns.3.x, currentTransform.columns.3.y, currentTransform.columns.3.z)
-            FlexaLog.game.info("🎯 [FollowCircle] Center recalibrated — \(baselineDescription, privacy: .public)")
+        // Reset baseline for recalibration
+        arBaseline = nil
+        
+        // Reset cursor to center
+        let centerX = screenSize.width / 2
+        let centerY = screenSize.height / 2
+        userCirclePosition = CGPoint(x: centerX, y: centerY)
+        lastScreenPoint = CGPoint(x: centerX, y: centerY)
+        hasLoggedBaselineCapture = false
+        
+        // Show recalibration message
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showRecalibrateMessage = true
         }
+        
+        // Hide message after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showRecalibrateMessage = false
+            }
+        }
+        
+        FlexaLog.game.info("🎯 [FollowCircle] Center recalibrated — baseline reset")
     }
 }
 

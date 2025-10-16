@@ -10,21 +10,20 @@ struct WallClimbersGameView: View {
     @State private var isGameActive = false
     @State private var gameTimer: Timer?
     @State private var lastWristY: Double = 0.5
-    @State private var smoothedWristY: Double = 0.5
     @State private var climbingPhase: ClimbingPhase = .waitingToStart
     @State private var showingAnalyzing = false
     @State private var showingResults = false
     @State private var sessionData: ExerciseSessionData?
+    @State private var hasInitializedGame = false
     @State private var reps: Int = 0
     @State private var currentRepStartY: Double = 0
     @State private var currentRepMaxY: Double = 0
-    @State private var leftHandPosition: CGPoint = .zero
-    @State private var rightHandPosition: CGPoint = .zero
     @State private var screenSize: CGSize = UIScreen.main.bounds.size
     
     // Game constants
     private let maxAltitude: Double = 1000
-    private let climbThreshold: Double = 0.05  // More sensitive
+    private let climbThreshold: Double = 0.08  // Less sensitive for cleaner rep detection
+    private let repMinimumDistance: Double = 100  // Minimum pixel distance for valid rep
     
     enum ClimbingPhase {
         case waitingToStart
@@ -37,42 +36,7 @@ struct WallClimbersGameView: View {
         ZStack {
             CameraGameBackground()
                 
-            // Hand tracking circles with climbing indicators
-            if isGameActive {
-                // Left hand circle
-                ZStack {
-                    Circle()
-                        .stroke(Color.red, lineWidth: 4)
-                        .frame(width: 60, height: 60)
-                        .position(leftHandPosition)
-                        .opacity(0.8)
-                    
-                    // Climbing indicator
-                    if climbingPhase == .goingUp {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.title2)
-                            .position(leftHandPosition)
-                    }
-                }
-                
-                // Right hand circle
-                ZStack {
-                    Circle()
-                        .stroke(Color.blue, lineWidth: 4)
-                        .frame(width: 60, height: 60)
-                        .position(rightHandPosition)
-                        .opacity(0.8)
-                    
-                    // Climbing indicator
-                    if climbingPhase == .goingUp {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.title2)
-                            .position(rightHandPosition)
-                    }
-                }
-            }
+            // Gameplay overlays intentionally removed for minimalist HUD — only altitude meter remains
             
             // Camera obstruction overlay
             if motionService.isCameraObstructed {
@@ -84,29 +48,9 @@ struct WallClimbersGameView: View {
                 .zIndex(1000)
             }
             
-            // Minimal UI - ONLY altitude meter (no timer, cleaner display)
+            // Minimal UI — only altitude meter on the right edge
             VStack {
-                HStack {
-                    Spacer()
-                    VStack(spacing: 4) {
-                        Text("\(Int(altitude))m")
-                            .font(.title)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                        Text("Reps: \(reps)")
-                            .font(.headline)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    .padding()
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(15)
-                    Spacer()
-                }
-                .padding(.top, 60)
-                
                 Spacer()
-                
-                // Vertical altitude meter aligned to the right edge for better visibility
                 HStack {
                     Spacer()
                     VerticalAltitudeMeter(altitude: altitude, maxAltitude: maxAltitude)
@@ -122,10 +66,21 @@ struct WallClimbersGameView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
+            // Keep screen on during game
+            UIApplication.shared.isIdleTimerDisabled = true
+            
+            guard !hasInitializedGame else {
+                FlexaLog.motion.info("🔁 [WallClimbers] View reappeared - skipping automatic setup (already initialized)")
+                return
+            }
+            hasInitializedGame = true
             FlexaLog.game.info("🔍 [WallClimbers] onAppear called - setting up game")
             setupGame()
         }
         .onDisappear {
+            // Re-enable idle timer (allow screen to sleep)
+            UIApplication.shared.isIdleTimerDisabled = false
+            
             motionService.stopSession()
             cleanupGame()
         }
@@ -149,6 +104,7 @@ struct WallClimbersGameView: View {
     
     private func setupGame() {
         FlexaLog.game.info("🔍 [WallClimbers] setupGame called - starting game session")
+        motionService.preferredCameraJoint = .armpit
         motionService.startGameSession(gameType: .wallClimbers)
         FlexaLog.game.info("🔍 [WallClimbers] Game session started")
         resetGame()
@@ -212,27 +168,25 @@ struct WallClimbersGameView: View {
             return 
         }
         
-        // Update hand positions from VisionPoseProvider (480x640 coordinates -> screen)
-        if let leftWrist = keypoints.leftWrist {
-            let mapped = CoordinateMapper.mapVisionPointToScreen(leftWrist, previewSize: screenSize)
-            print("[WallClimbers][DEBUG] leftWrist raw=\(leftWrist) mapped=\(mapped) preview=\(screenSize)")
-            if leftHandPosition == .zero { leftHandPosition = mapped }
-            let alpha: CGFloat = 0.25
-            leftHandPosition = CGPoint(x: leftHandPosition.x * (1 - alpha) + mapped.x * alpha,
-                                       y: leftHandPosition.y * (1 - alpha) + mapped.y * alpha)
+        let currentTime = Date().timeIntervalSince1970
 
-            motionService.sparcService.addVisionMovement(timestamp: Date().timeIntervalSince1970, position: mapped)
-        }
-        
-        if let rightWrist = keypoints.rightWrist {
-            let mapped = CoordinateMapper.mapVisionPointToScreen(rightWrist, previewSize: screenSize)
-            print("[WallClimbers][DEBUG] rightWrist raw=\(rightWrist) mapped=\(mapped) preview=\(screenSize)")
-            if rightHandPosition == .zero { rightHandPosition = mapped }
-            let alpha: CGFloat = 0.25
-            rightHandPosition = CGPoint(x: rightHandPosition.x * (1 - alpha) + mapped.x * alpha,
-                                        y: rightHandPosition.y * (1 - alpha) + mapped.y * alpha)
-
-            motionService.sparcService.addVisionMovement(timestamp: Date().timeIntervalSince1970, position: mapped)
+        // Feed SPARC analyzer with the active wrist to capture smoothness without UI artifacts
+        let activeSide = keypoints.phoneArm
+        if let activeWrist = (activeSide == .left) ? keypoints.leftWrist : keypoints.rightWrist {
+            let mapped = CoordinateMapper.mapVisionPointToScreen(activeWrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+            let wristPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
+            motionService.sparcService.addCameraMovement(position: wristPos, timestamp: currentTime)
+        } else {
+            // Fallback to whichever wrist is currently visible to keep data flowing
+            if let left = keypoints.leftWrist {
+                let mapped = CoordinateMapper.mapVisionPointToScreen(left, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+                let leftPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
+                motionService.sparcService.addCameraMovement(position: leftPos, timestamp: currentTime)
+            } else if let right = keypoints.rightWrist {
+                let mapped = CoordinateMapper.mapVisionPointToScreen(right, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+                let rightPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
+                motionService.sparcService.addCameraMovement(position: rightPos, timestamp: currentTime)
+            }
         }
     }
     
@@ -243,77 +197,76 @@ struct WallClimbersGameView: View {
         
         let activeSide = keypoints.phoneArm
         let activeWrist = (activeSide == .left) ? keypoints.leftWrist : keypoints.rightWrist
-        let inactiveWrist = (activeSide == .left) ? keypoints.rightWrist : keypoints.leftWrist
         
-        // Normalize Y coordinates to 0-1 range (640 height)
-        func normY(_ p: CGPoint?) -> Double? { 
-            guard let p = p else { return nil }
-            return Double(max(0, min(1, p.y / 640.0)))
-        }
+        // Use screen-space Y position (pixels) for more accurate distance tracking
+        guard let wrist = activeWrist else { return }
+        let mappedWrist = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+        let currentWristY = Double(mappedWrist.y)
         
-        var currentWristY: Double = lastWristY
-        if let a = normY(activeWrist), let b = normY(inactiveWrist) {
-            currentWristY = a * 0.7 + b * 0.3
-        } else if let a = normY(activeWrist) {
-            currentWristY = a
-        } else if let b = normY(inactiveWrist) {
-            currentWristY = b
-        }
-        
-        // Smooth noise
-        let alpha = 0.2
+        // Smooth the position
+        let alpha = 0.25
         let smoothY = alpha * currentWristY + (1 - alpha) * lastWristY
-        let deltaY = lastWristY - smoothY
+        let deltaY = smoothY - lastWristY  // Positive = moving down, Negative = moving up
         
         switch climbingPhase {
         case .waitingToStart:
-            if deltaY > climbThreshold {
+            // Start tracking when arm moves up significantly
+            if deltaY < -climbThreshold * screenSize.height {
                 climbingPhase = .goingUp
                 currentRepStartY = smoothY
                 currentRepMaxY = smoothY
+                FlexaLog.game.debug("🧗 [WallClimbers] Starting rep — startY=\(String(format: "%.1f", smoothY))")
             }
             
         case .goingUp:
+            // Track highest point
             if smoothY < currentRepMaxY {
                 currentRepMaxY = smoothY
             }
             
-            if deltaY < -climbThreshold {
+            // Detect arm coming back down
+            if deltaY > climbThreshold * screenSize.height {
                 climbingPhase = .goingDown
                 
-                let climbDistance = (currentRepStartY - currentRepMaxY) * 400  // Scale to pixels
-                if climbDistance > 5 {
-                    altitude = min(maxAltitude, altitude + climbDistance)
-                    score += Int(climbDistance)
-                    reps += 1
-                    
-                    // Calculate armpit ROM for this rep using standardized validation
-                    let rawArmpitROM = keypoints.getArmpitROM(side: activeSide)
-                    let validatedROM = motionService.validateAndNormalizeROM(rawArmpitROM)
+                let climbDistance = currentRepStartY - currentRepMaxY  // Pixels traveled upward
+                FlexaLog.game.debug("🧗 [WallClimbers] Arm coming down — traveled=\(String(format: "%.1f", climbDistance))px, minimum=\(repMinimumDistance)px")
+                
+                if climbDistance >= repMinimumDistance {
+                    // Valid rep - calculate ROM and record
+                    var validatedROM = motionService.currentROM
+                    if validatedROM <= 0 {
+                        let rawArmpitROM = keypoints.getArmpitROM(side: activeSide)
+                        validatedROM = motionService.validateAndNormalizeROM(rawArmpitROM)
+                    }
                     let minimumThreshold = motionService.getMinimumROMThreshold(for: .wallClimbers)
                     
                     if validatedROM >= minimumThreshold {
-                        motionService.recordVisionRepCompletion(rom: validatedROM)
+                        motionService.recordCameraRepCompletion(rom: validatedROM)
                         reps = motionService.currentReps
-                        // Add SPARC data based on wrist movement (Vision-based)
-                        if let wrist = activeWrist {
-                            motionService.sparcService.addVisionMovement(
-                                timestamp: Date().timeIntervalSince1970,
-                                position: wrist
-                            )
-                        }
                         
-                        print("🧗 [WallClimbers] Climb completed! Reps: \(reps), ROM: \(String(format: "%.1f", validatedROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°), Altitude: \(Int(altitude))m")
+                        // Update game metrics
+                        altitude = min(maxAltitude, altitude + climbDistance * 2.5)  // Scale distance to meters
+                        score += Int(climbDistance)
+                        
+                        FlexaLog.game.info("🧗 [WallClimbers] ✅ Rep #\(reps) completed! ROM: \(String(format: "%.1f", validatedROM))°, Distance: \(String(format: "%.0f", climbDistance))px, Altitude: \(Int(altitude))m")
+                        
+                        // Haptic feedback
+                        HapticFeedbackService.shared.successHaptic()
+                    } else {
+                        FlexaLog.game.debug("🧗 [WallClimbers] ⚠️ Rep ROM too low: \(String(format: "%.1f", validatedROM))° < \(String(format: "%.1f", minimumThreshold))°")
                     }
                 }
             }
             
         case .goingDown:
-            if deltaY > climbThreshold {
+            // Wait for arm to stabilize or start going up again
+            if deltaY < -climbThreshold * screenSize.height {
                 climbingPhase = .goingUp
                 currentRepStartY = smoothY
                 currentRepMaxY = smoothY
-            } else if abs(deltaY) < 0.01 {
+                FlexaLog.game.debug("🧗 [WallClimbers] Starting new rep — startY=\(String(format: "%.1f", smoothY))")
+            } else if abs(deltaY) < 0.02 * screenSize.height {
+                // Arm stabilized at rest
                 climbingPhase = .waitingToStart
             }
         }
@@ -327,8 +280,8 @@ struct WallClimbersGameView: View {
         
         let altitudeScore = Int(altitude)
         let snapshot = motionService.getFullSessionData(
-            overrideScore: altitudeScore,
-            overrideExerciseType: GameType.wallClimbers.displayName
+            overrideExerciseType: GameType.wallClimbers.displayName,
+            overrideScore: altitudeScore
         )
         var sessionData = snapshot
         if sessionData.romHistory.isEmpty {

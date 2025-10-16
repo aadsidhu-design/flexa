@@ -288,7 +288,9 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
                                     timestamp: now,
                                     sparcValue: smoothed,
                                     movementPhase: "steady",
-                                    jointAngles: [:]
+                                    jointAngles: [:],
+                                    confidence: 0.85,
+                                    dataSource: .imu
                                 )
                                 self.sparcDataPoints.append(dataPoint)
                                 self.calculationFailures = 0 // Reset on success
@@ -343,7 +345,9 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
                                     timestamp: now,
                                     sparcValue: smoothed,
                                     movementPhase: "steady",
-                                    jointAngles: [:]
+                                    jointAngles: [:],
+                                    confidence: 0.85,
+                                    dataSource: .imu
                                 )
                                 self.sparcDataPoints.append(dataPoint)
 
