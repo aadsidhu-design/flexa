@@ -92,17 +92,35 @@ final class HandheldRepDetector: ObservableObject {
     private var parameters: DetectionParameters = DetectionParameters.defaultParameters(for: .fruitSlicer)
     private var lastPosition: SIMD3<Float>?
     private var internalLastRepTimestamp: TimeInterval = 0
+    private var pendulumLastPosition: SIMD3<Float>?
+    private var pendulumLastDirection: SIMD3<Float>?
 
-    private enum RepState {
+    private enum RepState: CustomStringConvertible {
         case idle
-        case ascending
-        case descending
+        case building
+        case returning
+        
+        var description: String {
+            switch self {
+            case .idle: return "idle"
+            case .building: return "building"
+            case .returning: return "returning"
+            }
+        }
     }
     private var repState: RepState = .idle
     private var peakROM: Double = 0.0
-    private let romThreshold: Double = 5.0 // 5 degrees
-    private let repCooldown: TimeInterval = 0.4 // 400ms cooldown between reps
+    private var repStartROM: Double = 0.0
+    private var repStartTimestamp: TimeInterval = 0
+    private let romThreshold: Double = 4.0 // Minimum ROM (degrees) to consider a rep
+    private let romReturnThreshold: Double = 2.0 // ROM must fall below this to finish a rep
+    private let repCooldown: TimeInterval = 0.35 // Cooldown between reps (seconds)
+    private let minimumRepDuration: TimeInterval = 0.25
+    private let directionChangeDotThreshold: Float = -0.2
     var romProvider: (() -> Double)?
+    private var lastLoggedROM: Double = 0
+    private var lastROMLogTimestamp: TimeInterval = 0
+    private let romLogInterval: TimeInterval = 0.25
     
     /// Circular motion tracking (Follow Circle, Witch Brew)
     private var circleCenter: SIMD3<Float>?
@@ -148,9 +166,12 @@ final class HandheldRepDetector: ObservableObject {
         queue.async { [weak self] in
             guard let self = self else { return }
             
+            let rom = self.romProvider?() ?? 0.0
+            self.logLiveROMIfNeeded(rom: rom, timestamp: timestamp)
+
             switch self.gameType {
             case .fruitSlicer, .fanOutFlame, .makeYourOwn:
-                self.detectPendulumRep(position: position, timestamp: timestamp)
+                self.detectPendulumRep(position: position, timestamp: timestamp, rom: rom)
             case .followCircle, .witchBrew:
                 self.detectCircularRep(position: position, timestamp: timestamp)
             }
@@ -178,7 +199,9 @@ final class HandheldRepDetector: ObservableObject {
             
             self.lastPosition = nil
             self.internalLastRepTimestamp = 0
-            
+            self.pendulumLastPosition = nil
+            self.pendulumLastDirection = nil
+
             self.circleCenter = nil
             self.lastAngle = 0
             self.angleAccumulator = 0
@@ -186,35 +209,36 @@ final class HandheldRepDetector: ObservableObject {
             self.circleAxisPrimary = nil
             self.circleAxisSecondary = nil
             self.circleNormal = nil
+            
+            self.resetRepState()
         }
     }
     
     // MARK: - Pendulum Rep Detection
     
-    private func detectPendulumRep(position: SIMD3<Float>, timestamp: TimeInterval) {
-        let currentROM = romProvider?() ?? 0.0
+    private func detectPendulumRep(position: SIMD3<Float>, timestamp: TimeInterval, rom currentROM: Double) {
+        let romValue = max(0.0, currentROM)
 
-        switch repState {
-        case .idle:
-            if currentROM > romThreshold {
-                repState = .ascending
-                peakROM = currentROM
-            }
-        case .ascending:
-            if currentROM > peakROM {
-                peakROM = currentROM
-            } else if currentROM < peakROM * 0.8 { // 20% drop from peak
-                repState = .descending
-            }
-        case .descending:
-            if currentROM < peakROM * 0.5 { // 50% drop from peak
-                if timestamp - lastRepTimestamp > repCooldown {
-                    incrementRep(timestamp: timestamp)
+        if let previousPosition = pendulumLastPosition {
+            let displacement = position - previousPosition
+            let segmentLength = simd_length(displacement)
+            if segmentLength >= parameters.minMovementPerSample {
+                let currentDirection = displacement / segmentLength
+                if let lastDirection = pendulumLastDirection {
+                    let alignment = simd_dot(currentDirection, lastDirection)
+                    if alignment <= directionChangeDotThreshold {
+                        if timestamp - internalLastRepTimestamp > parameters.cooldown {
+                            if romValue > romThreshold {
+                                FlexaLog.motion.info("🔁 [HandheldRep][Pendulum] Rep completed — ROM=\(String(format: "%.1f", romValue))°")
+                                incrementRep(timestamp: timestamp)
+                            }
+                        }
+                    }
                 }
-                repState = .idle
-                peakROM = 0.0
+                pendulumLastDirection = currentDirection
             }
         }
+        pendulumLastPosition = position
     }
     
     // MARK: - Circular Rep Detection
@@ -282,7 +306,7 @@ final class HandheldRepDetector: ObservableObject {
 
         if cooldownMet && abs(angleAccumulator) >= parameters.rotationForRep {
             let rotation = angleAccumulator
-            FlexaLog.motion.info("🔁 [AUDIT] Circular rep counted. Reason: Rotation threshold met (\(String(format: "%.2f", rotation))rad). Radius: \(String(format: "%.3f", self.circleRadiusEMA))m")
+            FlexaLog.motion.info("🔁 [HandheldRep][Circular] Rep completed — rotation=\(String(format: "%.2f", rotation)) rad radiusEMA=\(String(format: "%.3f", self.circleRadiusEMA)) m")
             incrementRep(timestamp: timestamp)
             angleAccumulator -= parameters.rotationForRep * (angleAccumulator >= 0 ? 1 : -1)
         }
@@ -305,8 +329,24 @@ final class HandheldRepDetector: ObservableObject {
             guard let self = self else { return }
             self.currentReps += 1
             self.lastRepTimestamp = timestamp
-            FlexaLog.motion.info("🔁 [AUDIT] Rep count incremented to \(self.currentReps).")
+            FlexaLog.motion.info("🔁 [HandheldRep] Rep count incremented to \(self.currentReps)")
             self.onRepDetected?(self.currentReps, timestamp)
         }
+    }
+
+    private func resetRepState() {
+        repState = .idle
+        peakROM = 0
+        repStartROM = 0
+        repStartTimestamp = 0
+        pendulumLastPosition = nil
+        pendulumLastDirection = nil
+    }
+
+    private func logLiveROMIfNeeded(rom: Double, timestamp: TimeInterval) {
+        guard timestamp - lastROMLogTimestamp >= romLogInterval else { return }
+        lastROMLogTimestamp = timestamp
+        lastLoggedROM = rom
+        FlexaLog.motion.debug("📐 [HandheldROM][Live] ROM=\(String(format: "%.1f", rom))° state=\(self.repState)")
     }
 }

@@ -173,11 +173,24 @@ final class HandheldROMCalculator: ObservableObject {
                 self.repTrajectories.append(HandheldRepTrajectory(positions: self.currentRepPositions, timestamps: self.currentRepTimestamps))
             }
 
+            // ✅ CRITICAL FIX: Reset ALL baseline positions to prevent ROM accumulation
             self.currentRepPositions.removeAll()
             self.currentRepTimestamps.removeAll()
             self.currentRepArcLength = 0.0
             self.currentRepMaxCircularRadius = 0.0
             self.repBaselinePosition = nil
+            self.baselinePosition = nil  // Reset global baseline
+            
+            // For circular motion, reset center tracking for next rep
+            if self.motionProfile == .circular {
+                self.circularMotionCenter = nil
+                self.circularSampleCount = 0
+            }
+
+            DispatchQueue.main.async {
+                self.currentROM = 0.0
+                self.onROMUpdated?(0.0)
+            }
         }
     }
     

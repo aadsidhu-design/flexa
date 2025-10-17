@@ -55,7 +55,7 @@ struct CleanGameHostView: View {
                     .environmentObject(backendService)
                     .ignoresSafeArea()
             case .constellationMaker:
-                ArmRaisesGameView()
+                SimplifiedConstellationGameView()
                     .environmentObject(motionService)
                     .environmentObject(backendService)
                     .ignoresSafeArea()

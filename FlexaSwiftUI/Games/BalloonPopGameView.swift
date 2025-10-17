@@ -24,6 +24,8 @@ struct BalloonPopGameView: View {
     @State private var balloonSpawnTimer: Timer?
     @State private var lastSpawnTime: TimeInterval = 0
     @State private var lastElbowAngle: Double = 90
+    @State private var peakElbowAngle: Double = 0  // Track peak extension angle for ROM
+    @State private var repStartAngle: Double = 0  // Track starting angle for ROM
     @State private var screenSize: CGSize = UIScreen.main.bounds.size
     
     private let gameDuration: TimeInterval = 60 // 1 minute
@@ -267,41 +269,66 @@ struct BalloonPopGameView: View {
     }
     
     private func calculateCurrentElbowAngle(keypoints: SimplifiedPoseKeypoints) -> Double {
-        // Use the active arm for elbow angle calculation
+        // ✅ CONFIDENCE FILTERING: Only use landmarks with sufficient confidence
+        let confidenceThreshold: Float = 0.5
+        
         if activeArm == .left {
-            return keypoints.getLeftElbowAngle() ?? 0
+            // Check all required landmarks have sufficient confidence
+            guard keypoints.leftShoulderConfidence > confidenceThreshold,
+                  keypoints.leftElbowConfidence > confidenceThreshold,
+                  keypoints.leftWristConfidence > confidenceThreshold else {
+                return -1  // Invalid - low confidence
+            }
+            return keypoints.getLeftElbowAngle() ?? -1
         } else {
-            return keypoints.getRightElbowAngle() ?? 0
+            guard keypoints.rightShoulderConfidence > confidenceThreshold,
+                  keypoints.rightElbowConfidence > confidenceThreshold,
+                  keypoints.rightWristConfidence > confidenceThreshold else {
+                return -1  // Invalid - low confidence
+            }
+            return keypoints.getRightElbowAngle() ?? -1
         }
     }
     
     private func detectElbowExtensionRep(currentAngle: Double) {
         // Detect elbow extension reps (overhead extensions)
-        // Extension: angle increases (arm straightens)
-        // Flexion: angle decreases (arm bends)
+        // Extension: angle increases (arm straightens toward 180°)
+        // Flexion: angle decreases (arm bends toward 0°)
         
         // Use standardized ROM thresholds for consistent elbow angle detection
         let minimumThreshold = motionService.getMinimumROMThreshold(for: .balloonPop)
-        let extensionThreshold: Double = 180 - minimumThreshold // Near full extension
+        let extensionThreshold: Double = 140  // Start of extension phase (realistic)
         let flexionThreshold: Double = 90   // Bent elbow (physiological minimum)
         
         if !isInPosition && currentAngle > extensionThreshold {
-            // Started extension
+            // Started extension - record starting angle
             isInPosition = true
-        } else if isInPosition && currentAngle < flexionThreshold {
-            // Completed one rep (extension -> flexion)
-            // Update ROM using validated Vision pathway
-            isInPosition = false
-            
-            // Calculate ROM for this rep using live elbow ROM from motion service
-            var repROM = motionService.currentROM
-            if repROM <= 0 {
-                repROM = motionService.validateAndNormalizeROM(abs(lastElbowAngle - currentAngle))
+            repStartAngle = currentAngle
+            peakElbowAngle = currentAngle
+        } else if isInPosition {
+            // During extension phase - track peak angle
+            if currentAngle > peakElbowAngle {
+                peakElbowAngle = currentAngle
             }
-            if repROM >= minimumThreshold {
-                motionService.recordCameraRepCompletion(rom: repROM)
-                reps = motionService.currentReps
-                print("🎈 [BalloonPop] Rep completed! Total reps: \(reps), ROM: \(String(format: "%.1f", repROM))° (threshold: \(String(format: "%.1f", minimumThreshold))°)")
+            
+            // Check if returning to flexion (rep complete)
+            if currentAngle < flexionThreshold {
+                // Completed one rep (extension -> flexion)
+                isInPosition = false
+                
+                // ✅ CORRECT ROM CALCULATION: Use peak angle reached during extension
+                // ROM = range of motion = peak extension angle - starting flexion angle
+                let repROM = motionService.validateAndNormalizeROM(peakElbowAngle - flexionThreshold)
+                
+                if repROM >= minimumThreshold {
+                    motionService.recordCameraRepCompletion(rom: repROM)
+                    reps = motionService.currentReps
+                    print("🎈 [BalloonPop] Rep completed! Total reps: \(reps), ROM: \(String(format: "%.1f", repROM))° (peak: \(String(format: "%.1f", peakElbowAngle))°, threshold: \(String(format: "%.1f", minimumThreshold))°)")
+                }
+                
+                // Reset for next rep
+                peakElbowAngle = 0
+                repStartAngle = 0
             }
         }
         

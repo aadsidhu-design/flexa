@@ -2,7 +2,7 @@ import Foundation
 import CoreMotion
 import simd
 
-/// Detects repetitions for handheld games using smoothed gyroscope data.
+/// Detects repetitions for handheld games using a Kalman filter to smooth gyroscope data.
 final class KalmanIMURepDetector: ObservableObject {
     
     enum GameType: CustomStringConvertible {
@@ -26,13 +26,11 @@ final class KalmanIMURepDetector: ObservableObject {
     private var lastTimestamp: TimeInterval = 0
     private var isInitialized = false
     
-    // Smoothing
-    private var smoothedVelocity: Float = 0.0
-    private let smoothingFactor: Float = 0.2
+    // Kalman Filter for smoothing
+    private var kalmanFilter = OneDimensionalKalmanFilter(processNoise: 0.01, measurementNoise: 0.1)
     
     // Rep Detection
     private var lastDirection: Int = 0
-    private let velocityThreshold: Float = 0.1
     private let repCooldown: TimeInterval = 0.4
     
     // ROM
@@ -42,7 +40,7 @@ final class KalmanIMURepDetector: ObservableObject {
     var onRepDetected: ((Int, TimeInterval) -> Void)?
     
     init() {
-        FlexaLog.motion.info("🔄 [IMURepDetector] Initialized (Simple)")
+        FlexaLog.motion.info("🔄 [IMURepDetector] Initialized (Kalman Filter)")
     }
     
     func startSession(gameType: GameType) {
@@ -61,7 +59,7 @@ final class KalmanIMURepDetector: ObservableObject {
         lastRepTimestamp = 0
         lastTimestamp = 0
         isInitialized = false
-        smoothedVelocity = 0.0
+        kalmanFilter = OneDimensionalKalmanFilter(processNoise: 0.01, measurementNoise: 0.1)
         lastDirection = 0
     }
     
@@ -83,8 +81,7 @@ final class KalmanIMURepDetector: ObservableObject {
             measurement = Float(rotationRate.z) // Yaw
         }
         
-        // Apply exponential moving average as a low-pass filter
-        smoothedVelocity = (smoothingFactor * measurement) + ((1.0 - smoothingFactor) * smoothedVelocity)
+        kalmanFilter.update(with: measurement, dt: Float(dt))
         
         detectRep(timestamp: timestamp)
         
@@ -92,7 +89,8 @@ final class KalmanIMURepDetector: ObservableObject {
     }
     
     private func detectRep(timestamp: TimeInterval) {
-        let currentDirection = smoothedVelocity > velocityThreshold ? 1 : (smoothedVelocity < -velocityThreshold ? -1 : 0)
+        let velocity = kalmanFilter.x[1]
+        let currentDirection = velocity > 0 ? 1 : (velocity < 0 ? -1 : 0)
         
         if currentDirection != 0 && currentDirection != lastDirection {
             if lastDirection != 0 { // Avoid counting a rep on the first direction change

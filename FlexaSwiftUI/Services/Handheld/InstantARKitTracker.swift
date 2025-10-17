@@ -119,46 +119,7 @@ final class InstantARKitTracker: NSObject, ObservableObject, ARSessionDelegate {
         let timestamp = frame.timestamp
         let cameraTransform = frame.camera.transform
         
-        // Tier 1 Primary: Camera transform
-        lastCameraTransform = cameraTransform
-        
-        // Collect all anchors for secondary support
-        lastFaceAnchors.removeAll()
-        lastObjectAnchors.removeAll()
-        
-        for anchor in frame.anchors {
-            if let faceAnchor = anchor as? ARFaceAnchor {
-                lastFaceAnchors.append(faceAnchor)
-            } else if anchor is ARPlaneAnchor || anchor is ARImageAnchor || anchor is ARObjectAnchor {
-                lastObjectAnchors.append(AnchorInfo(transform: anchor.transform, identifier: anchor.identifier))
-            }
-        }
-        
-        // GPU-optimized tier selection
-        let selectedTransform: simd_float4x4
-        let tierLabel: String
-        
-        if trackingQuality == .normal {
-            // Tier 1: Camera transform primary + object anchors as support
-            selectedTransform = cameraTransform
-            tierLabel = "camera+object"
-            currentTier = .cameraPlusObject
-        } else {
-            // Tier 2 Fallback: Face anchors + any available object anchors
-            if !lastFaceAnchors.isEmpty {
-                let faceTransform = lastFaceAnchors[0].transform
-                selectedTransform = faceTransform
-                tierLabel = "face+object"
-                currentTier = .facePlusObject
-            } else {
-                // Final fallback: camera transform still available
-                selectedTransform = cameraTransform
-                tierLabel = "camera+object"
-                currentTier = .cameraPlusObject
-            }
-        }
-        
-        updateTrackingData(transform: selectedTransform, timestamp: timestamp, tierLabel: tierLabel)
+        updateTrackingData(transform: cameraTransform, timestamp: timestamp, tierLabel: "camera")
 
         if !isFullyInitialized {
             DispatchQueue.main.async {

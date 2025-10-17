@@ -41,6 +41,7 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     
     // Circular buffers - restored to larger sizes for better accuracy
     private let movementSamples = BoundedArray<MovementSample>(maxSize: 1000) // Restored
+    private let cameraMovementSamples = BoundedArray<MovementSample>(maxSize: 600)
     private let positionBuffer = BoundedArray<PositionData>(maxSize: 500) // Restored
     private let arcLengthHistory = BoundedArray<Double>(maxSize: 500) // Restored
     private let sparcHistory = BoundedArray<Double>(maxSize: 200) // Increased for better averaging
@@ -63,13 +64,18 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     private let sparcPublishInterval: TimeInterval = 0.25
     private var lastSPARCUpdateTime: Date = .distantPast
     // Smoothing for published SPARC values (0..1) - lower alpha to track changes faster
-    private var sparcSmoothingAlpha: Double = 0.15
+    private var sparcSmoothingAlpha: Double = 0.5
     private var lastSmoothedSPARC: Double = 50.0
     // Low-pass filter state for accelerometer magnitude (for handheld smoothing)
     private var accelLPFLast: Float = 0.0
     private let accelLPFAlpha: Float = 0.12 // gentle smoothing for accel magnitude
-    // Blend weight between spectral SPARC and accel-derived smoothness (0..1)
-    private let accelBlendWeight: Double = 0.45
+    // Smoothness weighting for spectral vs. consistency metrics
+    private let spectralWeight: Double = 0.65
+    private let consistencyReference: Double = 0.85
+    private let cameraSamplingRate: Double = 30.0
+    private var lastCameraPosition: SIMD3<Float>?
+    private var lastCameraVelocity: SIMD3<Float>?
+    private var lastCameraTimestamp: TimeInterval?
     
     init() {
         reset()
@@ -104,15 +110,15 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
         
         let sample = MovementSample(
             timestamp: timestamp,
-            acceleration: SIMD3<Float>(0, 0, 0), // Acceleration not directly available from vision
+            acceleration: SIMD3<Float>(0, 0, 0),
             velocity: estimatedVelocity,
             position: handPosition
         )
         
+        cameraMovementSamples.append(sample)
         movementSamples.append(sample)
-        
-        // Calculate SPARC more frequently for real-time vision-based smoothness
-        if movementSamples.count >= 20 { // Lower threshold for vision data
+
+        if cameraMovementSamples.count >= 15 {
             calculateVisionSPARC()
         }
     }
@@ -176,7 +182,7 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
         lastMemoryCheck = Date()
         lastSPARCUpdateTime = .distantPast
         sessionStartTime = Date() // Reset session start time for accurate graphing
-        FlexaLog.motion.info("📊 [SPARC] Reset complete - session start time initialized")
+        FlexaLog.motion.info(" [SPARC] Reset complete - session start time initialized")
     }
     
     func getCurrentSPARC() -> Double {
@@ -199,101 +205,51 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     
     // MARK: - General Movement Data Input
     func addMovement(timestamp: TimeInterval, acceleration: SIMD3<Float>, velocity: SIMD3<Float>) {
-        // Allow unlimited movement data for accurate calculations
-        
         let sample = MovementSample(
             timestamp: timestamp,
             acceleration: acceleration,
             velocity: velocity,
             position: nil
         )
-        
         movementSamples.append(sample)
-        
-        // Calculate SPARC with proper threshold for accuracy
+
         if movementSamples.count >= 30 {
             calculateIMUSPARC()
         }
     }
-    
+
     // MARK: - IMU-based SPARC Calculation
     private func calculateIMUSPARC() {
-        guard movementSamples.count >= 10 else { return }
-        
-        // Perform initial processing on processing queue
         processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            // Prefer velocity magnitudes for handheld IMU-based SPARC (gives better movement content)
-            // Prepare signals: velocity magnitudes preferred, otherwise accel magnitudes
-            let velocityMagnitudes = self.movementSamples.compactMap { sample -> Float? in
+            guard let self else { return }
+
+            let samples = self.movementSamples.allElements
+            guard samples.count >= 10 else { return }
+
+            let velocityMagnitudes = samples.compactMap { sample -> Float? in
                 guard let v = sample.velocity else { return nil }
                 return simd_length(v)
             }
 
-            let accelerationMagnitudes = self.movementSamples.map { sample -> Float in
-                return simd_length(sample.acceleration)
+            let accelerationMagnitudes = samples.map { sample -> Float in
+                simd_length(sample.acceleration)
             }
 
-            // Compute accel magnitude low-pass filtered series for accel-based smoothness
-            var accelLPFSeries: [Float] = []
-            var last: Float = self.accelLPFLast
-            for a in accelerationMagnitudes {
-                last = (self.accelLPFAlpha * a) + ((1.0 - self.accelLPFAlpha) * last)
-                accelLPFSeries.append(last)
-            }
-            // Update state
-            if let lastVal = accelLPFSeries.last { self.accelLPFLast = lastVal }
+            guard !velocityMagnitudes.isEmpty || accelerationMagnitudes.count >= 10 else { return }
 
-            // Velocity-based signal preferred for spectral SPARC
-            let signalToUse: [Float] = velocityMagnitudes.count >= 10 ? velocityMagnitudes : accelerationMagnitudes
+            let signal = velocityMagnitudes.isEmpty ? accelerationMagnitudes : velocityMagnitudes
 
-            // Perform FFT computation on dedicated background queue
             self.fftQueue.async {
                 autoreleasepool {
                     do {
-                        // Use configured sampling rate for correct frequency axis
-                        let result = try self.computeSPARCWithErrorHandling(signal: signalToUse, samplingRate: self.samplingRate)
-                        
-                        // Throttle publish to 0.5s cadence
+                        let result = try self.computeSPARCWithErrorHandling(signal: signal, samplingRate: self.samplingRate)
                         let now = Date()
                         if now.timeIntervalSince(self.lastSPARCUpdateTime) >= self.sparcPublishInterval {
-                            self.lastSPARCUpdateTime = now
-                            DispatchQueue.main.async {
-                                // Normalize spectral smoothness to 0..100
-                                let spectral = max(0.0, min(100.0, result.smoothness))
-
-                                // Compute simple accel-derived smoothness metric: lower variance -> smoother
-                                let accelVar: Float
-                                if accelLPFSeries.count > 1 {
-                                    let mean = accelLPFSeries.reduce(0, +) / Float(accelLPFSeries.count)
-                                    var sumSq: Float = 0
-                                    for v in accelLPFSeries { sumSq += (v - mean) * (v - mean) }
-                                    accelVar = sumSq / Float(accelLPFSeries.count)
-                                } else { accelVar = 0.0 }
-                                // Map variance to a 0..100 smoothness (heuristic): lower variance -> higher smoothness
-                                let accelSmoothness = Double(max(0.0, min(1.0, 1.0 - Double(accelVar) * 50.0))) * 100.0
-
-                                // Blend spectral and accel-based smoothness
-                                let blended = (self.accelBlendWeight * accelSmoothness) + ((1.0 - self.accelBlendWeight) * spectral)
-
-                                // Apply smoothing to the blended value
-                                let smoothed = (self.sparcSmoothingAlpha * blended) + ((1.0 - self.sparcSmoothingAlpha) * self.lastSmoothedSPARC)
-                                self.lastSmoothedSPARC = smoothed
-                                self.currentSPARC = smoothed
-                                self.updateAverageSPARC()
-                                // Store SPARC data point with REAL timestamp for proper graphing
-                                let dataPoint = SPARCDataPoint(
-                                    timestamp: now,
-                                    sparcValue: smoothed,
-                                    movementPhase: "steady",
-                                    jointAngles: [:],
-                                    confidence: 0.85,
-                                    dataSource: .imu
-                                )
-                                self.sparcDataPoints.append(dataPoint)
-                                self.calculationFailures = 0 // Reset on success
-                            }
+                            let spectral = max(0.0, min(100.0, result.smoothness))
+                            let consistency = self.calculateConsistencyScore(from: velocityMagnitudes.isEmpty ? accelerationMagnitudes : velocityMagnitudes, reference: self.consistencyReference)
+                            let blended = self.blendSmoothnessComponents(spectral: spectral, consistency: consistency)
+                            let smoothed = self.applyPublishingSmoothing(value: blended)
+                            self.publishSPARC(value: smoothed, timestamp: now, dataSource: .imu, confidence: result.confidence)
                         }
                     } catch {
                         self.handleSPARCCalculationError(error)
@@ -302,56 +258,36 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
             }
         }
     }
-    
+
     // MARK: - Vision-based SPARC Calculation
     private func calculateVisionSPARC() {
-        guard movementSamples.count >= 10 else { return }
-        
-        // Perform initial processing on processing queue
         processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            
-            let velocityMagnitudes = self.movementSamples.compactMap { sample -> Float? in
+            guard let self else { return }
+
+            let samples = self.cameraMovementSamples.allElements
+            guard samples.count >= 10 else { return }
+
+            let velocityMagnitudes = samples.compactMap { sample -> Float? in
                 guard let velocity = sample.velocity else { return nil }
                 return simd_length(velocity)
             }
-            
+
             guard velocityMagnitudes.count >= 10 else { return }
-            
+
             let mean = velocityMagnitudes.reduce(0, +) / Float(velocityMagnitudes.count)
             let detrendedSignal = velocityMagnitudes.map { abs($0 - mean) }
-            
-            // Perform FFT computation on dedicated background queue
+
             self.fftQueue.async {
                 autoreleasepool {
                     do {
-                        let result = try self.computeSPARCWithErrorHandling(signal: detrendedSignal, samplingRate: 30.0)
-                        
-                        // Throttle publish to 0.5s cadence
+                        let result = try self.computeSPARCWithErrorHandling(signal: detrendedSignal, samplingRate: self.cameraSamplingRate)
                         let now = Date()
                         if now.timeIntervalSince(self.lastSPARCUpdateTime) >= self.sparcPublishInterval {
-                            self.lastSPARCUpdateTime = now
-                            DispatchQueue.main.async {
-                                // Normalize to 0-100 and smooth for stable graphs
-                                let normalized = max(0.0, min(100.0, result.smoothness))
-                                let smoothed = (self.sparcSmoothingAlpha * normalized) + ((1.0 - self.sparcSmoothingAlpha) * self.lastSmoothedSPARC)
-                                self.lastSmoothedSPARC = smoothed
-                                self.currentSPARC = smoothed
-                                self.updateAverageSPARC()
-
-                                // Store SPARC data point with REAL timestamp for proper graphing
-                                let dataPoint = SPARCDataPoint(
-                                    timestamp: now,
-                                    sparcValue: smoothed,
-                                    movementPhase: "steady",
-                                    jointAngles: [:],
-                                    confidence: 0.85,
-                                    dataSource: .imu
-                                )
-                                self.sparcDataPoints.append(dataPoint)
-
-                                self.calculationFailures = 0 // Reset on success
-                            }
+                            let spectral = max(0.0, min(100.0, result.smoothness))
+                            let consistency = self.calculateConsistencyScore(from: velocityMagnitudes, reference: self.consistencyReference)
+                            let blended = self.blendSmoothnessComponents(spectral: spectral, consistency: consistency)
+                            let smoothed = self.applyPublishingSmoothing(value: blended)
+                            self.publishSPARC(value: smoothed, timestamp: now, dataSource: .vision, confidence: result.confidence)
                         }
                     } catch {
                         self.handleSPARCCalculationError(error)
@@ -360,18 +296,24 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
             }
         }
     }
-    
-    private func updateAverageSPARC() {
-        // Add current SPARC to history with REAL timestamp for proper time-based graphing
-        sparcHistory.append(currentSPARC)
-        
-        // Calculate average from recent SPARC values
-        let recentValues = sparcHistory.suffix(50) // Use last 50 SPARC calculations
-        if !recentValues.isEmpty {
-            averageSPARC = recentValues.reduce(0, +) / Double(recentValues.count)
+
+    // MARK: - Camera Movement Input
+    func addCameraMovement(position: SIMD3<Float>, timestamp: TimeInterval) {
+        let velocity = estimateCameraVelocity(position: position, timestamp: timestamp)
+        let sample = MovementSample(
+            timestamp: timestamp,
+            acceleration: SIMD3<Float>(0, 0, 0),
+            velocity: velocity,
+            position: CGPoint(x: CGFloat(position.x), y: CGFloat(position.y))
+        )
+        cameraMovementSamples.append(sample)
+        movementSamples.append(sample)
+
+        if cameraMovementSamples.count >= 15 {
+            calculateVisionSPARC()
         }
     }
-    
+
     // MARK: - SPARC Computation Core
     private func computeSPARC(signal: [Float], samplingRate: Double) -> SPARCResult {
         guard signal.count > 1 else {
@@ -444,49 +386,96 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     }
     
     private func calculateSpectralSmoothness(magnitudes: [Float], totalPower: Float) -> Double {
-        guard totalPower > 0 && magnitudes.count > 4 else { return 5.0 }
-        
-        // Enhanced SPARC calculation using spectral arc length
-        let N = magnitudes.count / 2 // Use only positive frequencies
-        let usableMagnitudes = Array(magnitudes[0..<N])
-        
-        // Calculate spectral arc length (key SPARC metric)
+        guard totalPower > 0 && magnitudes.count > 4 else { return 50.0 }
+
+        let halfCount = magnitudes.count / 2
+        let usableMagnitudes = Array(magnitudes[..<halfCount])
         var spectralArcLength: Float = 0.0
-        var spectralCentroid: Float = 0.0
-        var spectralSpread: Float = 0.0
-        
-        // Calculate spectral centroid
-        for (index, magnitude) in usableMagnitudes.enumerated() {
-            spectralCentroid += Float(index) * magnitude
-        }
-        spectralCentroid /= totalPower
-        
-        // Calculate spectral spread (variance around centroid)
-        for (index, magnitude) in usableMagnitudes.enumerated() {
-            let deviation = Float(index) - spectralCentroid
-            spectralSpread += deviation * deviation * magnitude
-        }
-        spectralSpread = sqrt(spectralSpread / totalPower)
-        
-        // Calculate arc length in frequency domain
+
         for i in 1..<usableMagnitudes.count {
-            let freq1 = Float(i-1)
+            let freq1 = Float(i - 1)
             let freq2 = Float(i)
-            let mag1 = usableMagnitudes[i-1] / totalPower
+            let mag1 = usableMagnitudes[i - 1] / totalPower
             let mag2 = usableMagnitudes[i] / totalPower
-            
+
             let deltaFreq = freq2 - freq1
             let deltaMag = mag2 - mag1
-            
+
             spectralArcLength += sqrt(deltaFreq * deltaFreq + deltaMag * deltaMag)
         }
-        
-        // Convert to SPARC score (0-100 scale, higher = smoother)
-        // Lower arc length = smoother movement
-        let normalizedArcLength = Double(spectralArcLength) / Double(N)
-        let sparcScore = max(0.0, min(100.0, 100.0 * (1.0 - normalizedArcLength)))
-        
-        return sparcScore
+
+        let normalizedArcLength = Double(spectralArcLength) / Double(max(1, usableMagnitudes.count))
+        return max(0.0, min(100.0, 100.0 * (1.0 - normalizedArcLength)))
+    }
+
+    private func calculateConsistencyScore(from magnitudes: [Float], reference: Double) -> Double {
+        guard magnitudes.count >= 5 else { return 100.0 }
+        let mean = Double(magnitudes.reduce(0, +)) / Double(magnitudes.count)
+        guard mean > 0 else { return 100.0 }
+        let variance = magnitudes.reduce(0.0) { partial, value in
+            let delta = Double(value) - mean
+            return partial + delta * delta
+        } / Double(magnitudes.count)
+        let coefficient = sqrt(variance) / mean
+        let normalized = max(0.0, 1.0 - min(coefficient / reference, 1.0))
+        return normalized * 100.0
+    }
+
+    private func blendSmoothnessComponents(spectral: Double, consistency: Double) -> Double {
+        let clampedConsistency = max(0.0, min(100.0, consistency))
+        return spectralWeight * spectral + (1.0 - spectralWeight) * clampedConsistency
+    }
+
+    private func applyPublishingSmoothing(value: Double) -> Double {
+        let smoothed = (sparcSmoothingAlpha * value) + ((1.0 - sparcSmoothingAlpha) * lastSmoothedSPARC)
+        lastSmoothedSPARC = smoothed
+        return smoothed
+    }
+
+    private func publishSPARC(value: Double, timestamp: Date, dataSource: SPARCDataSource, confidence: Double) {
+        currentSPARC = value
+        lastSPARCUpdateTime = timestamp
+        calculationFailures = 0
+
+        recordSPARCValue(value)
+
+        let normalizedConfidence = max(0.0, min(confidence, 1.0))
+        let dataPoint = SPARCDataPoint(
+            timestamp: timestamp,
+            sparcValue: value,
+            movementPhase: "steady",
+            jointAngles: [:],
+            confidence: normalizedConfidence,
+            dataSource: dataSource
+        )
+        sparcDataPoints.append(dataPoint)
+    }
+
+    private func recordSPARCValue(_ value: Double) {
+        sparcHistory.append(value)
+        let recent = sparcHistory.suffix(50)
+        if !recent.isEmpty {
+            averageSPARC = recent.reduce(0, +) / Double(recent.count)
+        }
+    }
+
+    private func estimateCameraVelocity(position: SIMD3<Float>, timestamp: TimeInterval) -> SIMD3<Float> {
+        defer {
+            lastCameraPosition = position
+            lastCameraTimestamp = timestamp
+        }
+
+        guard let previousPosition = lastCameraPosition, let previousTimestamp = lastCameraTimestamp else {
+            lastCameraVelocity = SIMD3<Float>(repeating: 0)
+            return SIMD3<Float>(repeating: 0)
+        }
+
+        let dt = Float(timestamp - previousTimestamp)
+        guard dt > 0 else { return lastCameraVelocity ?? SIMD3<Float>(repeating: 0) }
+
+        let velocity = (position - previousPosition) / dt
+        lastCameraVelocity = velocity
+        return velocity
     }
     
     private func calculateSignalConfidence(magnitudes: [Float], totalPower: Float) -> Double {

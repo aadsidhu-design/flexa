@@ -27,8 +27,6 @@ extension SPARCCalculationService {
         return (mags, timestamps)
     }
 
-    // Add camera movement sample into internal storage (no-op safe stub)
-    public func addCameraMovement(position: SIMD3<Float>, timestamp: TimeInterval) {
-        // no-op: conservative compatibility shim
-    }
+    // Note: addCameraMovement is now defined in SPARCCalculationService
+    // to avoid duplicate declarations
 }

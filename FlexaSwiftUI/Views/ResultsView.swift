@@ -117,9 +117,9 @@ struct ResultsView: View {
                             }
                         } else {
                             // Smoothness Trend Chart
-                            if !sessionData.sparcHistory.isEmpty {
+                            if !sessionData.sparcData.isEmpty {
                                 SmoothnessTrendChartView(
-                                    sparcHistory: sessionData.sparcHistory,
+                                    sparcData: sessionData.sparcData,
                                     title: "📊 Smoothness Trend"
                                 )
                                 .padding(.horizontal, 20)

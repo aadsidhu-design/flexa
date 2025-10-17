@@ -191,19 +191,18 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         }
     }
     
-    /// Add ROM value to romPerRep (for game views) - DEPRECATED
-    /// Games should no longer call this directly - data is handled automatically
+    /// ⚠️ DEPRECATED - Do not use
+    /// Games should NOT call this - data is handled automatically by rep detectors
+    @available(*, deprecated, message: "ROM tracking is now automatic. Do not call this method.")
     func addRomPerRep(_ value: Double) {
-        // No longer append - this causes duplicate data
-        // Rep detection automatically handles ROM tracking
+        FlexaLog.motion.warning("[DEPRECATED] addRomPerRep called - this method does nothing")
     }
     
-    /// Add SPARC value to sparcHistory (for game views) - DEPRECATED  
-    /// Games should no longer call this directly - data is handled automatically
+    /// ⚠️ DEPRECATED - Do not use
+    /// Games should NOT call this - data is handled automatically by SPARC service
+    @available(*, deprecated, message: "SPARC tracking is now automatic. Do not call this method.")
     func addSparcHistory(_ value: Double) {
-        // No longer append - this causes duplicate data
-        // Rep detection automatically handles SPARC tracking
-    FlexaLog.motion.warning("[DEPRECATED] addSparcHistory called — game view attempted direct SPARC injection")
+        FlexaLog.motion.warning("[DEPRECATED] addSparcHistory called - this method does nothing")
     }
     
     /// Signal ROM calculator to complete current rep and reset for next rep
@@ -235,8 +234,23 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     
     /// Standardized ROM threshold for rep detection - consistent across all game types
     func getMinimumROMThreshold(for gameType: GameType) -> Double {
-        // All games now allow any positive movement to qualify as a rep
-        return 0.0
+        // Per-game minimum ROM thresholds (degrees) to reduce false positives for camera games
+        switch gameType {
+        case .balloonPop:
+            // Elbow extension should be meaningful
+            return 15.0
+        case .wallClimbers:
+            // Armpit raise (wall climb) - moderate threshold
+            return 12.0
+        case .constellation:
+            // Arm raises used for constellation; allow smaller movement but avoid noise
+            return 10.0
+        case .camera:
+            return 8.0
+        default:
+            // Handheld games are rep-detected by IMU/ARKit detectors, not camera thresholds
+            return 0.0
+        }
     }
     
     func updateCurrentROM(_ rom: Double) {
@@ -396,7 +410,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     private var repSampleCooldownFrames: Int = 0
     // Track peak ROM observed since last rep for handheld games (robust to sampling phase)
     private var repPeakROM: Double = 0
-    private var imuBasedROM: Double = 0.0
+    // IMU-based ROM removed: handheld ROM should come exclusively from ARKit / HandheldROMCalculator
     private var baselineAttitude: CMAttitude?
 
     // MARK: - Pain Level Tracking
@@ -665,10 +679,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
             arkitTracker.onPositionUpdate = { [weak self] position, timestamp in
                 guard let self = self, !self.isCameraExercise, self.isARKitTrackingNormal else { return }
     
-                // Log position data for debugging
-                if Int(timestamp * 10) % 10 == 0 { // Log every 0.1 seconds
-                    FlexaLog.motion.debug("📍 [HandheldTracking] Position: (\(String(format: "%.3f", position.x)), \(String(format: "%.3f", position.y)), \(String(format: "%.3f", position.z))) at \(String(format: "%.3f", timestamp))")
-                }
+                // Position logging intentionally removed to reduce console noise in production builds.
     
                 // Feed to rep detector only when that pipeline is active
                 if self.isHandheldRepDetectorActive {
@@ -700,10 +711,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                     self.arkitPositionHistory.append(position)
                     self.arkitPositionTimestamps.append(timestamp)
                     
-                    // Log position samples periodically (every 60 frames = ~1 second at 60fps)
-                    if self.arkitPositionHistory.count % 60 == 0 {
-                        FlexaLog.motion.debug("📍 [Position] Sample \(self.arkitPositionHistory.count): (\(String(format: "%.3f", position.x)), \(String(format: "%.3f", position.y)), \(String(format: "%.3f", position.z))) [NORMAL tracking]")
-                    }
+                    // Periodic sample logging removed to avoid excessive logs during gameplay.
                 }
             }
             
@@ -735,7 +743,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     
             // Handle ROM updates - Always process for live ROM calculation
             handheldROMCalculator.onROMUpdated = { [weak self] rom in
-                guard let self = self, !self.currentGameType.usesIMUOnly else { return }
+                guard let self = self else { return }
     
                 DispatchQueue.main.async {
                     self.currentROM = rom
@@ -765,9 +773,10 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                 FlexaLog.motion.debug("📐 [HandheldROM] Rep ROM recorded: \(String(format: "%.1f°", rom))")
             }
             
-            // Wire Kalman IMU rep detector for ultra-low latency (Fruit Slicer, Fan the Flame)
+            // Wire Kalman IMU rep detector for ultra-low latency (fallback only)
+            // Kalman may still detect reps for low-latency scenarios but ROM is sourced from HandheldROMCalculator (ARKit)
             kalmanIMURepDetector.romProvider = { [weak self] in
-                return self?.imuBasedROM ?? 0.0
+                return self?.handheldROMCalculator.getLastRepROM() ?? 0.0
             }
             kalmanIMURepDetector.onRepDetected = { [weak self] reps, timestamp in
                 guard let self = self else { return }
@@ -777,7 +786,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                     self.currentReps = reps
                 }
                 
-                // Complete rep in ROM calculator
+                // Complete rep in ROM calculator (ROM always computed from ARKit positions)
                 self.handheldROMCalculator.completeRep(timestamp: timestamp)
                 
                 // Haptic feedback
@@ -786,7 +795,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                 }
             }
             
-            FlexaLog.motion.info("🎯 [Handheld] Instant ARKit tracking system + Kalman IMU initialized")
+            FlexaLog.motion.info("🎯 [Handheld] Instant ARKit tracking system initialized (Kalman IMU available as optional fallback)")
         }    
     // MARK: - Error Recovery Implementation
     
@@ -1038,7 +1047,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
             self.isHandheldRepDetectorActive = false
             self.isKalmanIMUActive = false
             self.baselineAttitude = nil
-            self.imuBasedROM = 0.0
+            // imuBasedROM deprecated: handheld ROM now sourced exclusively from ARKit via HandheldROMCalculator
             self.cameraRepDetector.reset()
             self.arkitPositionHistory.removeAll()
             self.arkitPositionTimestamps.removeAll()
@@ -1048,8 +1057,6 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
             // 🎯 Start handheld tracking if not camera game
             if !self.isCameraExercise {
                 self.startHandheldSession(gameType: gameType)
-                // Post-start validation: allow both rep detectors to run simultaneously for maximum tracking quality
-                // self.enforceRepDetectorMutualExclusion(preferKalmanForLowLatency: true)
             }
 
             // Lazily initialize MediaPipe pose provider only for camera exercises.
@@ -1237,9 +1244,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                 if let baselineAttitude = self.baselineAttitude {
                     let currentAttitude = motion.attitude
                     currentAttitude.multiply(byInverseOf: baselineAttitude)
-                    let rom = abs(currentAttitude.pitch * 180.0 / .pi)
-                    self.imuBasedROM = rom
-                    self.updateCurrentROM(rom)
+                    // IMU-based ROM update removed. ARKit positions drive HandheldROMCalculator which updates ROM.
+                    // Keep updateCurrentROM out of IMU path to avoid conflicting ROM sources.
                 }
             }
 
@@ -1496,22 +1502,38 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
             detectorGameType = .fruitSlicer // Fallback
         }
         
-        // Start Kalman IMU rep detector for Fruit Slicer and Fan the Flame
+        // Configure rep detectors. Make IMU primary for pendulum games and disable ARKit rep detector there.
+        // For other handheld games, use ARKit rep detector and disable IMU.
+        let kalmanGameType: KalmanIMURepDetector.GameType = (gameType == .fruitSlicer) ? .fruitSlicer : .fanOutFlame
+
         if gameType == .fruitSlicer || gameType == .fanOutFlame {
-            let kalmanGameType: KalmanIMURepDetector.GameType = gameType == .fruitSlicer ? .fruitSlicer : .fanOutFlame
-            kalmanIMURepDetector.startSession(gameType: kalmanGameType)
-            FlexaLog.motion.info("⚡️ [KalmanIMU] Started for \(gameType.displayName) - using Kalman only (ARKit detector disabled)")
-            // Don't start ARKit rep detector for these games - Kalman is the primary detector
+            // IMU (Kalman) primary, ARKit rep detector disabled
             isHandheldRepDetectorActive = false
             handheldRepDetector.reset()
+
+            kalmanIMURepDetector.startSession(gameType: kalmanGameType)
             isKalmanIMUActive = true
+            FlexaLog.motion.info("⚡️ [KalmanIMU] Started as PRIMARY rep detector for \(gameType.displayName)")
+            // Ensure ARKit is running so ROM calculator receives positions (ROM is sourced from ARKit)
+            // Kalman IMU is used only for low-latency rep detection; ROM must still come from ARKit positions.
+            do {
+                if !isARKitRunning {
+                    try startARKitWithErrorHandling()
+                    FlexaLog.motion.info("📍 [Handheld] ARKit started automatically to provide ROM for IMU-primary game")
+                }
+            } catch {
+                FlexaLog.motion.warning("📍 [Handheld] Failed to start ARKit for IMU-primary game: \(error.localizedDescription)")
+                // Defer to graceful degradation (ROM may be unavailable until ARKit becomes ready)
+                errorHandler.handleError(.arkitSessionFailed(error))
+            }
         } else {
-            kalmanIMURepDetector.stopSession()
-            kalmanIMURepDetector.resetState()
-            // Start ARKit rep detector for other games (Follow Circle, Make Your Own)
+            // ARKit handheld rep detector primary, IMU disabled
             handheldRepDetector.startSession(gameType: detectorGameType)
             isHandheldRepDetectorActive = true
-            FlexaLog.motion.info("📍 [ARKitRep] Started for \(gameType.displayName)")
+            FlexaLog.motion.info("📍 [ARKitRep] Started ARKit handheld rep detector for \(gameType.displayName)")
+
+            kalmanIMURepDetector.stopSession()
+            kalmanIMURepDetector.resetState()
             isKalmanIMUActive = false
         }
         
@@ -1575,6 +1597,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         
         FlexaLog.motion.info("📍 [InstantARKit] Tracker started successfully")
     }
+    
+
     
     func stopSession() {
         let endedGame = currentGameType
@@ -1798,6 +1822,53 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
             sparcScore: sanitizedSPARCScore
         )
     }
+    func getFullSessionData(overrideExerciseType: String, overrideScore: Int) -> ExerciseSessionData {
+        let duration = Date().timeIntervalSince1970 - sessionStartTime
+        let finalSPARC: Double
+        if !offlineHandheldSparcPerRep.isEmpty {
+            finalSPARC = offlineHandheldSparcAverage
+        } else {
+            finalSPARC = sparcService.getCurrentSPARC()
+        }
+
+        let sanitizedMaxROM = maxROM.isFinite ? maxROM : 0
+        let perRepROM = romPerRep.allElements.filter { $0.isFinite }
+        let sparcHistoryValues: [Double]
+        if !offlineHandheldSparcPerRep.isEmpty {
+            sparcHistoryValues = offlineHandheldSparcPerRep
+        } else {
+            sparcHistoryValues = sparcHistory.allElements.filter { $0.isFinite }
+        }
+
+        let sparcPoints: [SPARCPoint]
+        if !offlineHandheldSparcTimeline.isEmpty {
+            sparcPoints = offlineHandheldSparcTimeline
+        } else {
+            sparcPoints = sparcService.getSPARCDataPoints()
+                .filter { $0.sparcValue.isFinite }
+                .map { dataPoint in
+                    SPARCPoint(sparc: dataPoint.sparcValue, timestamp: dataPoint.timestamp)
+                }
+        }
+
+        let sanitizedSPARCScore = finalSPARC.isFinite ? finalSPARC : 0
+
+        return ExerciseSessionData(
+            exerciseType: overrideExerciseType,
+            score: overrideScore,
+            reps: currentReps,
+            maxROM: sanitizedMaxROM,
+            duration: duration,
+            timestamp: Date(),
+            romHistory: perRepROM,
+            repTimestamps: romPerRepTimestampsDates,
+            sparcHistory: sparcHistoryValues,
+            romData: [],
+            sparcData: sparcPoints,
+            sparcScore: sanitizedSPARCScore
+        )
+    }
+
 
     func getHandheldRepTrajectories() -> [HandheldRepTrajectory] {
         return handheldROMCalculator.getRepTrajectories()

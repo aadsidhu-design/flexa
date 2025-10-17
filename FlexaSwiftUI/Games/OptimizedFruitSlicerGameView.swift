@@ -16,99 +16,109 @@ struct OptimizedFruitSlicerGameView: View {
     @State private var allowLocalCovers: Bool = true
     @State private var gameHasEnded: Bool = false
     
+    @State private var motion: CMDeviceMotion? = nil
+
     var body: some View {
         if !calibrationCheck.isCalibrated {
             CalibrationRequiredView()
                 .environmentObject(calibrationCheck)
         } else {
-            ZStack {
-                if let scene = gameScene {
-                    SpriteView(scene: scene)
-                        .ignoresSafeArea()
-                        .background(Color.black)
-                }
-                
-                // Game UI overlay
-                VStack {
-                    HStack {
-                        // Bomb counter
-                        VStack(spacing: 4) {
-                            Text("💣")
-                                .font(.title)
-                            Text("\(3 - (gameScene?.bombsHit ?? 0))")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
+            TimelineView(.animation) { timeline in
+                ZStack {
+                    if let scene = gameScene {
+                        SpriteView(scene: scene)
+                            .ignoresSafeArea()
+                            .background(Color.black)
+                    }
+                    
+                    // Game UI overlay
+                    VStack {
+                        HStack {
+                            // Bomb counter
+                            VStack(spacing: 4) {
+                                Text("💣")
+                                    .font(.title)
+                                Text("\(3 - (gameScene?.bombsHit ?? 0))")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                            }
+                            .padding()
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(12)
+                            .padding(.leading, 20)
+                            .padding(.top, 60)
+                            
+                            Spacer()
                         }
-                        .padding()
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(12)
-                        .padding(.leading, 20)
-                        .padding(.top, 60)
                         
                         Spacer()
                     }
+                    .zIndex(500)
+                }
+                .onChange(of: timeline.date) { newDate in
+                    self.motion = motionService.motionManager?.deviceMotion
+                    if let motion = self.motion {
+                        gameScene?.update(motion: motion)
+                    }
+                }
+                .statusBarHidden()
+                .toolbar(.hidden, for: .navigationBar)
+                .onAppear {
+                    // Keep screen on during game
+                    UIApplication.shared.isIdleTimerDisabled = true
                     
-                    Spacer()
-                }
-                .zIndex(500)
-            }
-            .statusBarHidden()
-            .toolbar(.hidden, for: .navigationBar)
-            .onAppear {
-                // Keep screen on during game
-                UIApplication.shared.isIdleTimerDisabled = true
-                
-                if !isGameActive && !showingAnalyzing && !showingResults && !gameHasEnded {
-                    setupGame()
-                }
-                NotificationCenter.default.addObserver(
-                    forName: NSNotification.Name("FruitSlicerGameEnded"),
-                    object: nil,
-                    queue: .main
-                ) { notification in
-                    let resolvedSession: ExerciseSessionData = {
-                        guard
-                            let payload = notification.userInfo,
-                            let encoded = payload["sessionDataJSON"] as? Data
-                        else {
+                    if !isGameActive && !showingAnalyzing && !showingResults && !gameHasEnded {
+                        setupGame()
+                    }
+                    NotificationCenter.default.addObserver(
+                        forName: NSNotification.Name("FruitSlicerGameEnded"),
+                        object: nil,
+                        queue: .main
+                    ) { notification in
+                        let resolvedSession: ExerciseSessionData = {
+                            guard
+                                let payload = notification.userInfo,
+                                let encoded = payload["sessionDataJSON"] as? Data
+                            else {
+                                return motionService.getFullSessionData(
+                                    overrideExerciseType: GameType.fruitSlicer.displayName,
+                                    overrideScore: self.gameScene?.score ?? self.motionService.currentReps * 10
+                                )
+                            }
+                            let decoder = JSONDecoder()
+                            decoder.dateDecodingStrategy = .millisecondsSince1970
+                            if let decoded = try? decoder.decode(ExerciseSessionData.self, from: encoded) {
+                                return decoded
+                            }
                             return motionService.getFullSessionData(
                                 overrideExerciseType: GameType.fruitSlicer.displayName,
                                 overrideScore: self.gameScene?.score ?? self.motionService.currentReps * 10
                             )
-                        }
-                        let decoder = JSONDecoder()
-                        decoder.dateDecodingStrategy = .millisecondsSince1970
-                        if let decoded = try? decoder.decode(ExerciseSessionData.self, from: encoded) {
-                            return decoded
-                        }
-                        return motionService.getFullSessionData(
-                            overrideExerciseType: GameType.fruitSlicer.displayName,
-                            overrideScore: self.gameScene?.score ?? self.motionService.currentReps * 10
-                        )
-                    }()
+                        }()
 
-                    self.sessionData = resolvedSession
-                    self.gameHasEnded = true
-                    // Pause and tear down SpriteKit scene to ensure clean transition
-                    if let scene = self.gameScene {
-                        scene.isPaused = true
-                        scene.removeAllActions()
-                        scene.removeAllChildren()
-                    }
-                    self.gameScene = nil
-                    if !isHosted {
-                        NavigationCoordinator.shared.showAnalyzing(sessionData: resolvedSession)
+                        self.sessionData = resolvedSession
+                        self.gameHasEnded = true
+                        // Pause and tear down SpriteKit scene to ensure clean transition
+                        if let scene = self.gameScene {
+                            scene.isPaused = true
+                            scene.removeAllActions()
+                            scene.removeAllChildren()
+                        }
+                        self.gameScene = nil
+                        if !isHosted {
+                            NavigationCoordinator.shared.showAnalyzing(sessionData: resolvedSession)
+                        }
                     }
                 }
-            }
-            .onDisappear {
-                cleanup()
-            }
-            .fullScreenCover(isPresented: $showingAnalyzing) {
-                if let sessionData = sessionData, allowLocalCovers {
-                    AnalyzingView(sessionData: sessionData)
-                        .environmentObject(NavigationCoordinator.shared)
+                .onDisappear {
+                    cleanup()
+                }
+                .fullScreenCover(isPresented: $showingAnalyzing) {
+                    if let sessionData = sessionData, allowLocalCovers {
+                        AnalyzingView(sessionData: sessionData)
+                            .environmentObject(NavigationCoordinator.shared)
+                    }
                 }
             }
         }
@@ -119,10 +129,8 @@ struct OptimizedFruitSlicerGameView: View {
         // ROM tracking mode automatically determined by SimpleMotionService based on game type
         motionService.startGameSession(gameType: .fruitSlicer)
         
-        let scene = FruitSlicerScene()
-        scene.size = CGSize(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
+        let scene = FruitSlicerScene(size: UIScreen.main.bounds.size)
         scene.scaleMode = .resizeFill
-        scene.motionService = motionService
         scene.physicsWorld.gravity = CGVector(dx: 0, dy: -4.9) // Reduced gravity
         self.gameScene = scene
         self.isGameActive = true
@@ -133,6 +141,9 @@ struct OptimizedFruitSlicerGameView: View {
         FlexaLog.motion.info("🎮 [FruitSlicer] Starting cleanup - motionService active: \(motionService.isSessionActive), ARKit running: \(motionService.isARKitRunning)")
         isGameActive = false
         
+        // Stop motion service
+        motionService.stopSession()
+
         // Re-enable idle timer (allow screen to sleep)
         UIApplication.shared.isIdleTimerDisabled = false
         
@@ -152,8 +163,6 @@ struct OptimizedFruitSlicerGameView: View {
 }
 
 class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
-    var motionService: SimpleMotionService?
-    var isGameActive = false
     var bombsHit = 0
     var frameCount = 0
     var score = 0
@@ -166,8 +175,6 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     private var pendulumVelocity: Double = 0.0
     private var lastUpdateTime: TimeInterval = 0
     private var currentOrientation: UIDeviceOrientation = UIDevice.current.orientation
-    private var imuRetryCount = 0
-    private let imuMaxRetries = 30
     
     // Direction-change rep detection
     private var lastPendulumDirection: Int = 0  // -1 (backward), 0 (neutral), 1 (forward)
@@ -190,19 +197,8 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleOrientationChange), name: UIDevice.orientationDidChangeNotification, object: nil)
         currentOrientation = UIDevice.current.orientation
         
-        // Setup IMU motion tracking
-        setupIMUMotionTracking()
-        
         // Create slicer visual element
         createSlicer()
-        
-        // Set game as active to enable fruit spawning
-        isGameActive = true
-        
-        // Reset direction tracking for rep detection
-        lastPendulumDirection = 0
-        lastDirectionChangeTime = 0
-        pendulumVelocity = 0.0
         
         // Start spawning fruits with shorter intervals for more action
         let spawnAction = SKAction.sequence([
@@ -242,13 +238,20 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         addChild(slicer)
     }
     
-    override func update(_ currentTime: TimeInterval) {
+    func update(motion: CMDeviceMotion) {
         frameCount += 1
-        lastUpdateTime = currentTime
-        // Update slicer position from IMU motion
-        updateSlicerFromIMU()
+        
+        // Initialize reference gravity vector on first reading
+        if initialGravityVector == nil {
+            initialGravityVector = motion.gravity
+            initialPitch = motion.attitude.pitch
+            initialRoll = motion.attitude.roll
+            print("✅ [FruitSlicer] IMU initialized with gravity reference")
+        }
+        
+        updateSlicerPosition(with: motion)
     }
-    
+
     // MARK: - SKPhysicsContactDelegate
     
     func didBegin(_ contact: SKPhysicsContact) {
@@ -304,8 +307,6 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     }
     
     private func spawnFruit() {
-        guard isGameActive else { return }
-        
         // Limit active fruit/bombs to prevent node overload and frame drops
         let activeProjectiles = children.filter { $0.name == "fruit" || $0.name == "bomb" }.count
         if activeProjectiles >= 20 { return }
@@ -369,73 +370,6 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
             SKAction.removeFromParent()
         ])
         sprite.run(removeAction)
-    }
-    
-    
-    private func setupIMUMotionTracking() {
-        // Use the shared motion service instead of creating our own CMMotionManager
-        guard let motionService = motionService,
-              let manager = motionService.motionManager,
-              manager.isDeviceMotionAvailable else {
-            if imuRetryCount < imuMaxRetries {
-                imuRetryCount += 1
-                if imuRetryCount % 5 == 0 {
-                    print("⌛ [FruitSlicer] Waiting for CoreMotion manager (retry \(imuRetryCount)/\(imuMaxRetries))…")
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                    self?.setupIMUMotionTracking()
-                }
-            } else {
-                print("❌ [FruitSlicer] Device motion not available or motion service not set — giving up")
-            }
-            return
-        }
-        
-        // Wait a moment for initial readings to stabilize, then capture reference
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if let motion = manager.deviceMotion {
-                self.initialGravityVector = motion.gravity
-                self.initialPitch = motion.attitude.pitch
-                self.initialRoll = motion.attitude.roll
-                print("✅ [FruitSlicer] IMU calibrated with reference gravity: y=\(motion.gravity.y)")
-            }
-        }
-        
-        print("✅ [FruitSlicer] Using shared motion service for IMU tracking")
-    }
-    
-    private func updateSlicerFromIMU() {
-        // Get motion data from the shared motion service with better error handling
-        guard let motionService = motionService,
-              let manager = motionService.motionManager else {
-            // Motion service not yet ready — retry setup
-            if imuRetryCount < imuMaxRetries {
-                imuRetryCount += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                    self?.setupIMUMotionTracking()
-                }
-            }
-            return
-        }
-        
-        guard let motion = manager.deviceMotion else {
-            // No motion data available - motion might have stopped, try to restart
-            if !manager.isDeviceMotionActive && manager.isDeviceMotionAvailable {
-                manager.startDeviceMotionUpdates()
-            }
-            return
-        }
-        
-        // Initialize reference gravity vector on first reading
-        if initialGravityVector == nil {
-            initialGravityVector = motion.gravity
-            initialPitch = motion.attitude.pitch
-            initialRoll = motion.attitude.roll
-            print("✅ [FruitSlicer] IMU initialized with gravity reference")
-            return
-        }
-        
-        updateSlicerPosition(with: motion)
     }
     
     private func updateSlicerPosition(with motion: CMDeviceMotion) {
@@ -526,10 +460,7 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func recalibrateBaselineForCurrentOrientation() {
-        guard let dm = motionService?.motionManager?.deviceMotion else { return }
-        initialGravityVector = dm.gravity
-        initialPitch = dm.attitude.pitch
-        initialRoll = dm.attitude.roll
+        // This is now handled by the view
     }
 
     private func isUsableOrientation(_ o: UIDeviceOrientation) -> Bool {
@@ -558,31 +489,7 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     
 
     private func endGame() {
-        isGameActive = false
-        
-        // Clean up all scene resources immediately
-        removeAllActions()
-        removeAllChildren()
-        physicsWorld.contactDelegate = nil
-        
-        // Stop IMU motion tracking
-        motionService?.motionManager?.stopDeviceMotionUpdates()
-        print("🛑 [FruitSlicer] IMU motion tracking stopped and scene cleaned up")
-        
         // Build rich payload for CleanGameHostView consumers
-        if let ms = motionService {
-            let data = ms.getFullSessionData(
-                overrideExerciseType: GameType.fruitSlicer.displayName,
-                overrideScore: score
-            )
-            ms.stopSession()
-
-            let userInfo = ms.buildSessionNotificationPayload(from: data)
-            print("📣 [FruitSlicer] Posting game end with payload → score=\(data.score), reps=\(data.reps), maxROM=\(String(format: "%.1f", data.maxROM))°, SPARC=\(String(format: "%.2f", data.sparcScore))")
-            NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerGameEnded"), object: nil, userInfo: userInfo)
-        } else {
-            print("📣 [FruitSlicer] Posting game end without payload (no motionService)")
-            NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerGameEnded"), object: nil)
-        }
+        NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerGameEnded"), object: nil)
     }
 }

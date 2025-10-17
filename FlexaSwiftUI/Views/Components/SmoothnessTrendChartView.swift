@@ -1,17 +1,16 @@
+
 import SwiftUI
 import Charts
 
 struct SmoothnessTrendChartView: View {
-    let sparcHistory: [Double]
-    let title: String
-    
+    let sparcData: [SPARCPoint]
+    let title: String // Keep for API compatibility, but won't be displayed
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-                .fontWeight(.bold)
+        VStack(alignment: .leading, spacing: 4) {
+            // Title has been removed as per user request.
             
-            if sparcHistory.isEmpty {
+            if sparcData.isEmpty {
                 VStack {
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .font(.system(size: 40))
@@ -23,61 +22,45 @@ struct SmoothnessTrendChartView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 200)
             } else {
-                Chart {
-                    let trendLine = calculateTrendLine(sparcHistory)
-                    TrendLineChart(trendLine: trendLine)
+                Chart(Array(sparcData.enumerated()), id: \.offset) { index, point in
+                    LineMark(
+                        x: .value("Repetition", index + 1),
+                        y: .value("SPARC", point.sparc)
+                    )
+                    .foregroundStyle(.green)
+                    .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                    .symbol(Circle().strokeBorder(lineWidth: 2))
                 }
-                .chartYAxis {
-                    AxisMarks(position: .leading)
+                .chartYAxis { // Hide Y-axis grid lines
+                    AxisMarks(position: .leading) { _ in
+                        AxisValueLabel()
+                        AxisTick()
+                    }
                 }
-                .chartXAxis {
-                    AxisMarks()
+                .chartXAxis { // Hide X-axis grid lines
+                    AxisMarks { _ in
+                        AxisValueLabel()
+                        AxisTick()
+                    }
                 }
                 .frame(height: 200)
-                .padding(.vertical, 8)
+                .padding(.top, 12)
             }
-        }
-    }
-    
-    /// Calculate smooth trend line using exponential moving average
-    private func calculateTrendLine(_ data: [Double]) -> [Double] {
-        guard data.count >= 1 else { return [] }
-        
-        var trendLine: [Double] = []
-        let alpha: Double = 0.25  // Exponential smoothing factor (0-1, lower = smoother)
-        var smoothed = data[0]
-        trendLine.append(smoothed)
-        
-        for i in 1..<data.count {
-            smoothed = alpha * data[i] + (1 - alpha) * smoothed
-            trendLine.append(smoothed)
-        }
-        
-        return trendLine
-    }
-
-}
-
-struct TrendLineChart: ChartContent {
-    let trendLine: [Double]
-    
-    var body: some ChartContent {
-        ForEach(0..<max(0, trendLine.count - 1), id: \.self) { i in
-            LineMark(
-                x: .value("Rep", Double(i + 1)),
-                y: .value("Trend", trendLine[i])
-            )
-            .foregroundStyle(.green)
-            .opacity(0.8)
-            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
         }
     }
 }
 
 #Preview {
     SmoothnessTrendChartView(
-        sparcHistory: [45.0, 48.0, 52.0, 50.0, 55.0, 58.0, 60.0, 62.0],
-        title: "📊 Smoothness Trend"
+        sparcData: [
+            SPARCPoint(sparc: 45.0, timestamp: Date().addingTimeInterval(-10)),
+            SPARCPoint(sparc: 48.0, timestamp: Date().addingTimeInterval(-8)),
+            SPARCPoint(sparc: 52.0, timestamp: Date().addingTimeInterval(-6)),
+            SPARCPoint(sparc: 50.0, timestamp: Date().addingTimeInterval(-4)),
+            SPARCPoint(sparc: 55.0, timestamp: Date().addingTimeInterval(-2)),
+            SPARCPoint(sparc: 58.0, timestamp: Date())
+        ],
+        title: ""
     )
     .padding()
     .background(Color.black)
