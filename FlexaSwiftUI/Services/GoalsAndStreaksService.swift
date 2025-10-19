@@ -20,6 +20,34 @@ class GoalsAndStreaksService: ObservableObject {
             self.calculateProgress()
             // No detached background work required here - keep refresh local-first and lightweight
         }
+
+        // Observe custom exercise completions to update goal circles promptly
+        NotificationCenter.default.addObserver(forName: .customExerciseCompleted, object: nil, queue: .main) { [weak self] notification in
+            guard let self = self else { return }
+            guard let info = notification.userInfo,
+                  let exerciseId = info["exerciseId"] as? UUID,
+                  let rom = info["rom"] as? Double,
+                  let sparc = info["sparc"] as? Double else {
+                self.calculateProgress()
+                return
+            }
+            // Create a lightweight session object to incorporate into progress
+            let session = ExerciseSessionData(
+                exerciseType: "Custom",
+                score: 0,
+                reps: 1,
+                maxROM: rom,
+                averageROM: rom,
+                duration: 0,
+                timestamp: Date(),
+                romHistory: [rom],
+                repTimestamps: [Date()],
+                sparcHistory: [sparc],
+                sparcScore: sparc
+            )
+            self.recordExerciseSession(session)
+            self.calculateProgress()
+        }
     }
 
     func configureBackendService(_ service: BackendService) {
