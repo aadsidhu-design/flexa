@@ -5,20 +5,22 @@ struct SimplifiedConstellationGameView: View {
     @EnvironmentObject var motionService: SimpleMotionService
 
     var body: some View {
-        ZStack {
-            CameraGameBackground()
+        GeometryReader { geometry in
+            ZStack {
+                CameraGameBackground()
 
-            ForEach(Array(game.currentPattern.enumerated()), id: \.offset) { index, point in
+                ForEach(Array(game.currentPattern.enumerated()), id: \.offset) { index, point in
                 Circle()
                     .foregroundColor(game.connectedPoints.contains(index) ? Color.green : Color.white)
                     .overlay(
                         Circle()
-                            .stroke(Color.cyan, lineWidth: game.connectedPoints.contains(index) ? 4 : 3)
+                            .stroke(Color.cyan, lineWidth: game.connectedPoints.contains(index) ? 3 : 3)
                     )
                     .frame(width: 24, height: 24)
                     .position(point)
-                    .scaleEffect(game.connectedPoints.contains(index) ? 1.3 : 1.0)
-                    .animation(.easeInOut(duration: 0.2), value: game.connectedPoints)
+                    .scaleEffect(game.connectedPoints.contains(index) ? 1.07 : 1.0)
+                    .animation(.easeInOut(duration: 0.15), value: game.connectedPoints)
+                    .zIndex(2)
             }
 
             if game.connectedPoints.count > 1 {
@@ -30,6 +32,7 @@ struct SimplifiedConstellationGameView: View {
                 }
                 .stroke(Color.cyan, lineWidth: 4)
                 .opacity(0.9)
+                .zIndex(0)
             }
 
             if let startIdx = game.activeLineStartIndex,
@@ -46,6 +49,7 @@ struct SimplifiedConstellationGameView: View {
                     }
                 }
                 .stroke(Color.cyan.opacity(0.75), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .zIndex(1)
             }
         
             if game.isGameActive && game.handPosition != .zero {
@@ -67,18 +71,7 @@ struct SimplifiedConstellationGameView: View {
                 isBackCamera: false
             )
             .zIndex(1000)
-            
-            if motionService.isMovementTooFast {
-                VStack {
-                    FastMovementWarningOverlay(
-                        isMovementTooFast: motionService.isMovementTooFast,
-                        reason: motionService.fastMovementReason
-                    )
-                    .padding(.top, 100)
-                    Spacer()
-                }
-                .zIndex(999)
-            }
+            // Fast movement overlay removed per request.
 
             VStack {
                 HStack {
@@ -114,10 +107,18 @@ struct SimplifiedConstellationGameView: View {
 
                 Spacer()
             }
+            }
+            .onAppear {
+                game.screenSize = geometry.size
+                game.motionService = motionService
+                game.setupGame()
+            }
+            .onChange(of: geometry.size) { newSize in
+                game.screenSize = newSize
+            }
         }
         .onAppear {
-            game.motionService = motionService
-            game.setupGame()
+            // Additional setup if needed
         }
         .onDisappear {
             game.cleanup()
@@ -146,7 +147,8 @@ class ConstellationGame: ObservableObject {
     private var lastDetectedPointIndex: Int?
     private var lastDetectionTimestamp: TimeInterval = 0
     private var previousPosition: CGPoint = .zero
-    private var screenSize: CGSize = .zero
+    var screenSize: CGSize = .zero  // Changed to internal for GeometryReader access
+    private var repDetector: CameraRepDetector = CameraRepDetector(minimumInterval: 0.3)
 
     func setupGame() {
         guard let motionService = motionService else { return }
@@ -190,16 +192,48 @@ class ConstellationGame: ObservableObject {
     }
 
     func updateHandTracking() {
-        guard let motionService = motionService else { return }
-        if let wrist = motionService.poseKeypoints?.leftWrist {
-            let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+        guard let motionService = motionService else {
+            FlexaLog.game.debug("📍 [Constellation] No motion service available")
+            return
+        }
+        
+        // Ensure screen size is set
+        if screenSize == .zero {
+            screenSize = UIScreen.main.bounds.size
+            FlexaLog.game.info("📍 [Constellation] Screen size initialized: \(self.screenSize.width)x\(self.screenSize.height)")
+        }
+        
+        // Prefer the wrist on the phone-side (phoneArm), fall back to any visible wrist
+        if let keypoints = motionService.poseKeypoints {
+            let preferredSide = keypoints.phoneArm
+            let wristPoint = preferredSide == .left ? keypoints.leftWrist : keypoints.rightWrist
+            var wrist = wristPoint
+            // Fallback: if preferred side not visible, try the other side
+            if wrist == nil {
+                wrist = preferredSide == .left ? keypoints.rightWrist : keypoints.leftWrist
+            }
+            if let wrist = wrist {
+            let cameraRes = motionService.cameraResolution
+            FlexaLog.game.debug("📍 [Constellation] Raw wrist: (\(String(format: "%.4f", wrist.x)), \(String(format: "%.4f", wrist.y))) | Camera: \(cameraRes.width)x\(cameraRes.height) | Screen: \(self.screenSize.width)x\(self.screenSize.height)")
+            
+            // Map vision point to screen; no vertical flip required (MediaPipe provides top-left origin)
+            let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: cameraRes, previewSize: screenSize, isPortrait: true, flipY: false)
+            FlexaLog.game.debug("📍 [Constellation] Mapped wrist: (\(String(format: "%.1f", mapped.x)), \(String(format: "%.1f", mapped.y)))")
+            
             let alpha: CGFloat = 0.8
             handPosition = CGPoint(
                 x: previousPosition == .zero ? mapped.x : (previousPosition.x * (1 - alpha) + mapped.x * alpha),
                 y: previousPosition == .zero ? mapped.y : (previousPosition.y * (1 - alpha) + mapped.y * alpha)
             )
             previousPosition = handPosition
+            
+            FlexaLog.game.debug("📍 [Constellation] Final hand position: (\(String(format: "%.1f", self.handPosition.x)), \(String(format: "%.1f", self.handPosition.y)))")
+            } else {
+                FlexaLog.game.debug("📍 [Constellation] No wrist detected in pose keypoints")
+                handPosition = .zero
+            }
         } else {
+            FlexaLog.game.debug("📍 [Constellation] No pose keypoints available")
             handPosition = .zero
         }
     }
@@ -253,14 +287,30 @@ class ConstellationGame: ObservableObject {
     }
 
     func handleCorrectHit(for index: Int) {
+        // Validate connection using CameraRepDetector
         if !connectedPoints.isEmpty {
             let lastConnected = connectedPoints.last!
+            let pattern = getConstellationPattern()
             
-            if !isValidConnection(from: lastConnected, to: index) {
+            let isValid = repDetector.validateConstellationConnection(
+                from: lastConnected,
+                to: index,
+                pattern: pattern,
+                connectedPoints: connectedPoints,
+                totalPoints: currentPattern.count
+            )
+            
+            if !isValid {
                 showIncorrectFeedback = true
                 wrongConnectionCount += 1
                 scheduleIncorrectFeedbackHide()
                 HapticFeedbackService.shared.errorHaptic()
+                FlexaLog.game.warning("🚫 [Constellation] Invalid connection: from=\(lastConnected) to=\(index) pattern=\(self.currentPatternName)")
+                
+                // Reset progress for this constellation
+                connectedPoints.removeAll()
+                activeLineStartIndex = nil
+                activeLineEndIndex = nil
                 return
             }
         }
@@ -289,19 +339,30 @@ class ConstellationGame: ObservableObject {
             score += 10
         }
 
-        if connectedPoints.count >= currentPattern.count {
-            if currentPatternName == "Triangle" && connectedPoints.last != connectedPoints.first {
-                // Special case for triangle, it must be a closed loop
-                if connectedPoints.count == 3 {
-                    let firstPoint = currentPattern[connectedPoints.first!]
-                    let lastPoint = currentPattern[connectedPoints.last!]
-                    let distance = hypot(firstPoint.x - lastPoint.x, firstPoint.y - lastPoint.y)
-                    if distance > targetHitTolerance() * 2 {
-                        return
-                    }
-                }
-            }
+        // Check if pattern is complete using CameraRepDetector
+        let pattern = getConstellationPattern()
+        let isComplete = repDetector.isConstellationComplete(
+            pattern: pattern,
+            connectedPoints: connectedPoints,
+            totalPoints: currentPattern.count
+        )
+        
+        if isComplete {
+            FlexaLog.game.info("✅ [Constellation] \(self.currentPatternName) pattern completed")
             onPatternCompleted()
+        }
+    }
+    
+    func getConstellationPattern() -> CameraRepDetector.ConstellationPattern {
+        switch currentPatternName {
+        case "Triangle":
+            return .triangle
+        case "Square":
+            return .rectangle
+        case "Circle":
+            return .circle
+        default:
+            return .triangle
         }
     }
 
@@ -347,34 +408,6 @@ class ConstellationGame: ObservableObject {
         }
     }
     
-    func isValidConnection(from: Int, to: Int) -> Bool {
-        switch currentPatternName {
-        case "Triangle":
-            return from != to && !connectedPoints.contains(to)
-            
-        case "Square":
-            let diff = abs(from - to)
-            if diff == 1 || diff == 3 {
-                return true
-            } else {
-                return false
-            }
-            
-        case "Circle":
-            let numPoints = currentPattern.count
-            let diff = abs(from - to)
-            
-            if diff == 1 || diff == numPoints - 1 {
-                return true
-            } else {
-                return false
-            }
-            
-        default:
-            return true
-        }
-    }
-
     func onPatternCompleted() {
         completedPatterns += 1
         score += 100
@@ -409,6 +442,11 @@ class ConstellationGame: ObservableObject {
         activeLineStartIndex = nil
         activeLineEndIndex = nil
         clearIncorrectFeedback()
+        
+        // Ensure screen size is set
+        if screenSize == .zero {
+            screenSize = UIScreen.main.bounds.size
+        }
         
         let centerX = screenSize.width / 2
         let centerY = screenSize.height / 2

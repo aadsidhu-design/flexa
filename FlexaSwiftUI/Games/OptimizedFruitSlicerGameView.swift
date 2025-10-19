@@ -10,6 +10,7 @@ struct OptimizedFruitSlicerGameView: View {
     var isHosted: Bool = false
     @State private var gameScene: FruitSlicerScene?
     @State private var isGameActive = false
+    @State private var bombsHitLocal: Int = 0
     @State private var showingAnalyzing = false
     @State private var showingResults = false
     @State private var sessionData: ExerciseSessionData?
@@ -38,7 +39,7 @@ struct OptimizedFruitSlicerGameView: View {
                             VStack(spacing: 4) {
                                 Text("💣")
                                     .font(.title)
-                                Text("\(3 - (gameScene?.bombsHit ?? 0))")
+                                    Text("\(bombsHitLocal)")
                                     .font(.title2)
                                     .fontWeight(.bold)
                                     .foregroundColor(.white)
@@ -56,10 +57,43 @@ struct OptimizedFruitSlicerGameView: View {
                     }
                     .zIndex(500)
                 }
+                // Listen for bombs changed notifications from the SpriteKit scene
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FruitSlicerBombsChanged"))) { note in
+                    if let info = note.userInfo, let count = info["count"] as? Int {
+                        // The scene now posts remaining bombs (0..3) as 'count'
+                        self.bombsHitLocal = count
+                    }
+                }
+                // Listen for scene ending (3 bombs hit)
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("FruitSlicerSceneEnded"))) { note in
+                    guard !gameHasEnded else { return }
+                    
+                    let finalScore = (note.userInfo?["score"] as? Int) ?? gameScene?.score ?? 0
+                    
+                    // Get session data from motion service
+                    let exerciseSession = motionService.getFullSessionData(
+                        overrideExerciseType: GameType.fruitSlicer.displayName,
+                        overrideScore: finalScore
+                    )
+                    
+                    // Build rich payload for CleanGameHostView
+                    let userInfo = motionService.buildSessionNotificationPayload(from: exerciseSession)
+                    FlexaLog.game.info("📣 [FruitSlicer] Posting game end → score=\(exerciseSession.score) reps=\(exerciseSession.reps) maxROM=\(String(format: "%.1f", exerciseSession.maxROM))° SPARC=\(String(format: "%.2f", exerciseSession.sparcScore))")
+                    NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerGameEnded"), object: nil, userInfo: userInfo)
+                    
+                    // Stop motion service
+                    motionService.stopSession()
+                    gameHasEnded = true
+                }
                 .onChange(of: timeline.date) { newDate in
                     self.motion = motionService.motionManager?.deviceMotion
                     if let motion = self.motion {
                         gameScene?.update(motion: motion)
+                    }
+                    // Forward ARKit transform to scene for ROM/rep processing
+                    if let transform = motionService.currentARKitTransform {
+                        let ts = Date().timeIntervalSince1970
+                        gameScene?.receiveARKitTransform(transform, timestamp: ts)
                     }
                 }
                 .statusBarHidden()
@@ -106,7 +140,7 @@ struct OptimizedFruitSlicerGameView: View {
                             scene.removeAllChildren()
                         }
                         self.gameScene = nil
-                        if !isHosted {
+                        if !self.isHosted {
                             NavigationCoordinator.shared.showAnalyzing(sessionData: resolvedSession)
                         }
                     }
@@ -154,6 +188,8 @@ struct OptimizedFruitSlicerGameView: View {
             scene.physicsWorld.contactDelegate = nil
         }
         gameScene = nil
+        // Reset local bombs counter
+        bombsHitLocal = 0
         
         // Remove notification observers
         NotificationCenter.default.removeObserver(self)
@@ -164,6 +200,7 @@ struct OptimizedFruitSlicerGameView: View {
 
 class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     var bombsHit = 0
+    // Note: SwiftUI host listens for "FruitSlicerBombsChanged" notifications to update counters.
     var frameCount = 0
     var score = 0
     
@@ -176,10 +213,38 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     private var lastUpdateTime: TimeInterval = 0
     private var currentOrientation: UIDeviceOrientation = UIDevice.current.orientation
     
-    // Direction-change rep detection
-    private var lastPendulumDirection: Int = 0  // -1 (backward), 0 (neutral), 1 (forward)
-    private var lastDirectionChangeTime: TimeInterval = 0
-    private let repCooldown: TimeInterval = 0.3  // Minimum time between reps (300ms)
+    // Rep detection handled by HandheldRepDetector via ARKit position data
+    
+    // ARKit baseline / streaming support for ROM & rep calculations
+    private var arBaseline3D: SIMD3<Float>? = nil
+    private var lastARKitTimestamp: TimeInterval = 0
+
+    /// Receive ARKit transform from the hosting view and forward 3D positions to handheld pipelines.
+    /// This keeps IMU-driven slicer behavior intact while using ARKit positions for ROM/rep calculations.
+    func receiveARKitTransform(_ transform: simd_float4x4, timestamp: TimeInterval) {
+        // Simple rate limiting: don't forward more than 120 Hz
+        let minInterval: TimeInterval = 1.0 / 120.0
+        guard timestamp - lastARKitTimestamp >= minInterval else { return }
+        lastARKitTimestamp = timestamp
+
+        let pos = SIMD3<Float>(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+
+        // Initialize baseline if needed
+        if arBaseline3D == nil {
+            arBaseline3D = pos
+        }
+
+        // Forward to shared calculators provided by SimpleMotionService to keep logic centralized
+        DispatchQueue.main.async {
+            let svc = SimpleMotionService.shared
+            // Only forward when session active and not a camera exercise
+            if svc.isSessionActive && !svc.isCameraExercise {
+                let ts = Date().timeIntervalSince1970
+                // Use the public ingestion API so we don't access private internals
+                svc.ingestExternalHandheldPosition(pos, timestamp: ts)
+            }
+        }
+    }
     
     override func didMove(to view: SKView) {
         backgroundColor = SKColor.black
@@ -199,13 +264,18 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         
         // Create slicer visual element
         createSlicer()
+        // Initialize bombs remaining (3 total) for SwiftUI host
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerBombsChanged"), object: nil, userInfo: ["count": 3])
+        }
         
-        // Start spawning fruits with shorter intervals for more action
-        let spawnAction = SKAction.sequence([
-            SKAction.wait(forDuration: 1.2), // Reduced for faster spawning
-            SKAction.run(spawnFruit)
+        // Start spawning fruits. Slightly slower spawn to reduce chaos and CPU pressure
+        // Use an explicit closure capture for spawnFruit so the action reliably calls the instance method
+        let spawnSequence = SKAction.sequence([
+            SKAction.wait(forDuration: 1.6), // Slightly slower spawn
+            SKAction.run { [weak self] in self?.spawnFruit() }
         ])
-        run(SKAction.repeatForever(spawnAction))
+        run(SKAction.repeatForever(spawnSequence), withKey: "spawnFruits")
     }
     
     override func willMove(from view: SKView) {
@@ -228,10 +298,11 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         slicer.position = CGPoint(x: size.width / 2, y: centerY)
         slicerBaseY = centerY // Store base position for IMU movement
         
-        // Add physics body for collision detection
-        slicer.physicsBody = SKPhysicsBody(circleOfRadius: 18)
-        slicer.physicsBody?.categoryBitMask = 4 // Slicer category
-        slicer.physicsBody?.contactTestBitMask = 1 | 2 // Contact with fruit and bombs
+    // Add physics body for collision detection
+    slicer.physicsBody = SKPhysicsBody(circleOfRadius: 18)
+    // Use explicit bit flags for clarity (fruit=1<<0, bomb=1<<1, slicer=1<<2)
+    slicer.physicsBody?.categoryBitMask = UInt32(1 << 2) // Slicer category
+    slicer.physicsBody?.contactTestBitMask = UInt32((1 << 0) | (1 << 1)) // Contact with fruit and bombs
         slicer.physicsBody?.collisionBitMask = 0
         slicer.physicsBody?.isDynamic = false
         
@@ -261,11 +332,18 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         if contactMask == 5 { // Slicer + Fruit
             let fruit = contact.bodyA.categoryBitMask == 1 ? contact.bodyA.node : contact.bodyB.node
             if let fruitNode = fruit {
+                // Logging for debugging spawn/despawn lifecycle
+                FlexaLog.motion.info("🍓 [FruitSlicer] Fruit sliced at pos=\(String(describing: fruitNode.position)), node=\(String(describing: fruitNode.name))")
+
                 // Create slice effect
                 createSliceEffect(at: fruitNode.position, isGood: true)
+
+                // Ensure any scheduled actions are removed before deleting node to avoid delayed re-adds
+                fruitNode.removeAllActions()
+                fruitNode.physicsBody = nil
                 fruitNode.removeFromParent()
                 score += 10
-                
+
                 // Brief slicer flash for feedback
                 if let slicer = childNode(withName: "slicer") as? SKShapeNode {
                     let flashAction = SKAction.sequence([
@@ -279,11 +357,22 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         } else if contactMask == 6 { // Slicer + Bomb
             let bomb = contact.bodyA.categoryBitMask == 2 ? contact.bodyA.node : contact.bodyB.node
             if let bombNode = bomb {
+                FlexaLog.motion.info("💣 [FruitSlicer] Bomb hit at pos=\(String(describing: bombNode.position))")
                 // Create explosion effect
                 createSliceEffect(at: bombNode.position, isGood: false)
+                bombNode.removeAllActions()
+                bombNode.physicsBody = nil
                 bombNode.removeFromParent()
                 bombsHit += 1
-                
+                // Clamp bombsHit to valid range
+                bombsHit = max(0, min(3, bombsHit))
+                // Compute remaining bombs (0..3) to report to UI
+                let remaining = max(0, 3 - bombsHit)
+                // Notify any SwiftUI host about remaining bombs
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerBombsChanged"), object: nil, userInfo: ["count": remaining])
+                }
+
                 // Slicer flash darker red for bomb hit
                 if let slicer = childNode(withName: "slicer") as? SKShapeNode {
                     let flashAction = SKAction.sequence([
@@ -293,9 +382,14 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
                     ])
                     slicer.run(flashAction)
                 }
-                
+
                 if bombsHit >= 3 {
-                    endGame()
+                    // When we've hit the limit, post remaining=0 and end the game immediately
+                    DispatchQueue.main.async { [weak self] in
+                        NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerBombsChanged"), object: nil, userInfo: ["count": 0])
+                        // End game immediately - no delay needed
+                        self?.endGame()
+                    }
                 }
             }
         }
@@ -337,7 +431,7 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         sprite.zPosition = 5
         
         // Physics with higher launch, less gravity effect
-        sprite.physicsBody = SKPhysicsBody(circleOfRadius: 25)
+    sprite.physicsBody = SKPhysicsBody(circleOfRadius: 25)
         sprite.physicsBody?.usesPreciseCollisionDetection = false
         sprite.physicsBody?.allowsRotation = false
         sprite.physicsBody?.linearDamping = 0.1
@@ -345,8 +439,9 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         sprite.physicsBody?.affectedByGravity = true
         sprite.physicsBody?.restitution = 0.2
         sprite.physicsBody?.mass = 2.0 // Heavier = less affected by gravity
-        sprite.physicsBody?.categoryBitMask = sprite.name == "bomb" ? 2 : 1 // Different categories for fruit vs bomb
-        sprite.physicsBody?.contactTestBitMask = 4 // Contact with slicer
+    // Set explicit categories: fruit -> 1<<0, bomb -> 1<<1
+    sprite.physicsBody?.categoryBitMask = sprite.name == "bomb" ? UInt32(1 << 1) : UInt32(1 << 0)
+    sprite.physicsBody?.contactTestBitMask = UInt32(1 << 2) // Contact with slicer
         sprite.physicsBody?.collisionBitMask = 0
         sprite.physicsBody?.isDynamic = true
         
@@ -364,10 +459,20 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         
         addChild(sprite)
         
-        // Remove after 4 seconds to reduce memory usage
+        // Remove after 4 seconds to reduce memory usage — but fade out first so removal isn't abrupt
+        let fadeDuration: TimeInterval = 0.35
+        let lifeDuration: TimeInterval = 4.0
         let removeAction = SKAction.sequence([
-            SKAction.wait(forDuration: 4.0),
-            SKAction.removeFromParent()
+            SKAction.wait(forDuration: lifeDuration - fadeDuration),
+            SKAction.fadeAlpha(to: 0.0, duration: fadeDuration),
+            SKAction.run { [weak sprite] in
+                if let s = sprite {
+                    FlexaLog.motion.debug("🍌 [FruitSlicer] Auto-despawning node name=\(String(describing: s.name)) pos=\(String(describing: s.position))")
+                    s.removeAllActions()
+                    s.physicsBody = nil
+                    s.removeFromParent()
+                }
+            }
         ])
         sprite.run(removeAction)
     }
@@ -383,71 +488,46 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         
         // Integrate acceleration for velocity-based movement
         let deltaTime = 1.0 / 60.0 // Assuming 60Hz updates
-        pendulumVelocity += upDownAccel * deltaTime
-        
-        // Apply damping to prevent runaway velocity
-        pendulumVelocity *= 0.95
-        
-        // Detect direction change for rep counting
-        detectDirectionChangeRep(acceleration: upDownAccel)
+        pendulumVelocity += upDownAccel * deltaTime * 2.5 // Increased multiplier for more responsive movement
+
+        // Apply lighter damping for more dynamic motion
+        pendulumVelocity *= 0.88 // Reduced from 0.92 for more movement
         
         // Map velocity to screen position
         let screenHeight = size.height
-        let padding: CGFloat = 100
+        let padding: CGFloat = 80 // Reduced padding for more vertical range
         let availableHeight = screenHeight - (2 * padding)
         
-        // MUCH MORE SENSITIVE: how much velocity for full screen travel
-        let maxVelocity: Double = 0.3 // Much more sensitive - smaller value = more movement
+        // Sensitivity: how much velocity for full screen travel
+        // Lower value = more movement per unit velocity
+        let maxVelocity: Double = 0.45 // Reduced from 0.7 for more movement
         
         // Calculate movement ratio (-1 to 1)
         // Positive velocity (forward swing) -> UP on screen
         let movementRatio = CGFloat(pendulumVelocity / maxVelocity)
         let clampedRatio = max(-1.0, min(1.0, movementRatio))
         
-        // Calculate target Y position - MUCH MORE DRAMATIC MOVEMENT
+        // Calculate target Y position - increased range for more dramatic movement
         // Forward swing = higher Y (slicer moves up)
-        let targetY = slicerBaseY + clampedRatio * (availableHeight * 0.8) // Use 80% of available height
+        let targetY = slicerBaseY + clampedRatio * (availableHeight * 0.75) // Increased from 0.55 to 0.75
         
         // Apply bounds
         let minY = padding
         let maxY = screenHeight - padding
         let finalY = max(minY, min(maxY, targetY))
         
-        // Smooth interpolation for fluid movement
+        // Reduced smoothing for more responsive movement
         let currentSlicerY = slicer.position.y
-        let smoothingFactor: CGFloat = 0.3 // Responsive for pendulum
+        let smoothingFactor: CGFloat = 0.35 // Increased from 0.22 for more responsive motion
         let interpolatedY = currentSlicerY + (finalY - currentSlicerY) * smoothingFactor
         
         // Update slicer position
         slicer.position = CGPoint(x: size.width / 2, y: interpolatedY)
-        
     }
     
-    private func detectDirectionChangeRep(acceleration: Double) {
-        // Determine current direction: 1 (forward/positive), -1 (backward/negative)
-        let currentDirection: Int = acceleration > 0.05 ? 1 : (acceleration < -0.05 ? -1 : lastPendulumDirection)
-        
-        // Skip if direction is neutral or hasn't changed
-        guard currentDirection != 0 && lastPendulumDirection != 0 && lastPendulumDirection != currentDirection else {
-            // Initialize or neutral state
-            if lastPendulumDirection == 0 && currentDirection != 0 {
-                lastPendulumDirection = currentDirection
-            }
-            return
-        }
-        
-        // Check cooldown to avoid multiple reps in quick succession
-        let currentTime = CACurrentMediaTime()
-        guard currentTime - lastDirectionChangeTime >= repCooldown else {
-            return
-        }
-        
-        // Direction change detected
-        // Note: Kalman IMU is the primary rep detector for FruitSlicer
-        // Rep recording handled automatically by Kalman, not by direction changes
-        lastPendulumDirection = currentDirection
-        lastDirectionChangeTime = currentTime
-    }
+    // Direction-based rep counting is now handled by HandheldRepDetector
+    // via ARKit position data forwarded through receiveARKitTransform
+    // This ensures consistent rep detection across all handheld games
 
     // MARK: - Orientation Handling
     @objc private func handleOrientationChange() {
@@ -489,7 +569,12 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
     
 
     private func endGame() {
-        // Build rich payload for CleanGameHostView consumers
-        NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerGameEnded"), object: nil)
+        // Scene posts notification with score - SwiftUI view will handle session data
+        FlexaLog.game.info("💣 [FruitSlicer] Game ended - 3 bombs hit, score=\(self.score)")
+        NotificationCenter.default.post(
+            name: NSNotification.Name("FruitSlicerSceneEnded"),
+            object: nil,
+            userInfo: ["score": self.score]
+        )
     }
 }

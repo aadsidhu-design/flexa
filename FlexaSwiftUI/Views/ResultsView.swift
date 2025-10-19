@@ -68,7 +68,7 @@ struct ResultsView: View {
                     VStack {
                         if selectedTab == 0 {
                             // Range of Motion Graph
-                            if !sessionData.romHistory.isEmpty {
+                            if !sessionData.romHistory.isEmpty && sessionData.reps > 0 {
                                 // Clamp to the actual rep count to avoid over-long X-axis
                                 let repCount = max(1, sessionData.reps)
                                 let romSeries = Array(sessionData.romHistory.prefix(repCount))

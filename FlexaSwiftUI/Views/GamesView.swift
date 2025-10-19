@@ -89,42 +89,7 @@ struct GamesView: View {
                                 navigationCoordinator.showInstructions(for: game)
                             }
                         }
-                        NavigationLink {
-                            TestROMExerciseView()
-                        } label: {
-                            DiagnosticCard()
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        
-                        NavigationLink {
-                            ScrollView {
-                                VStack(spacing: 20) {
-                                    TestROMCardView()
-                                        .padding()
-                                }
-                            }
-                            .navigationTitle("Test ROM Card")
-                            .navigationBarTitleDisplayMode(.inline)
-                        } label: {
-                            VStack(spacing: 12) {
-                                Image(systemName: "rectangle.3.offgrid")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(.blue)
-                                
-                                Text("ROM Card")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 100)
-                            .background(Color.black.opacity(0.5))
-                            .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.blue.opacity(0.5), lineWidth: 2)
-                            )
-                        }
-                        .buttonStyle(PlainButtonStyle())
+                        // Developer diagnostic/test entries removed for production.
                     }
                     .padding(Edge.Set.horizontal)
                 }
@@ -197,48 +162,7 @@ struct ModernGameCard: View {
     }
 }
 
-struct DiagnosticCard: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.purple.opacity(0.2))
-                    .frame(width: 60, height: 60)
-
-                Image(systemName: "gauge.badge.plus")
-                    .font(.system(size: 28))
-                    .foregroundColor(.purple)
-            }
-
-            VStack(spacing: 4) {
-                Text("ROM Test Harness")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.center)
-
-                Text("Developer")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
-
-            HStack(spacing: 4) {
-                Image(systemName: "hammer")
-                    .font(.caption2)
-                Text("Diagnostics")
-                    .font(.caption2)
-            }
-            .foregroundColor(.gray)
-        }
-        .frame(height: 160)
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.gray.opacity(0.1))
-        )
-    }
-}
+// DiagnosticCard removed — developer-only diagnostic/test entry. Left intentionally out of production UI.
 
 
 enum GameType: String, CaseIterable, Identifiable {

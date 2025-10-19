@@ -137,8 +137,9 @@ struct FanOutTheFlameGameView: View {
     
     
     private func updateFanMotion() {
-    // Use ARKit position for fan animation (ROM calculation now handled by InstantARKitTracker)
-    guard let currentTransform = motionService.currentARKitTransform else { return }
+        // Hand animation follows motion (Requirement 3.1, 3.2)
+        // Use ARKit position for fan animation (ROM calculation handled by HandheldROMCalculator)
+        guard let currentTransform = motionService.currentARKitTransform else { return }
         
         // Extract position for animation feedback only
         let currentPosition = SIMD3<Double>(
@@ -196,14 +197,14 @@ struct FanOutTheFlameGameView: View {
     private func performRepDetectedFanMotion() {
         fanMotions += 1
         
-        // Reduce flame intensity only when a rep is detected
-        // Rep = direction change detected by IMU gyroscope (left swing OR right swing)
+        // Each rep reduces flame intensity (Requirement 3.1, 3.2)
+        // Rep = direction change detected by HandheldRepDetector (left swing OR right swing)
         flameIntensity = max(0, flameIntensity - flameDecayRate)
         
         // Sync reps with motion service
         reps = motionService.currentReps
         
-        // Check if flame is out
+        // Game ends when flame extinguished (Requirement 3.1, 3.2)
         if flameIntensity <= 0 {
             isFlameOut = true
             stopGame()
@@ -266,7 +267,7 @@ struct FanOutTheFlameGameView: View {
         // Update fan motion from sensors
         updateFanMotion()
         
-        // Check max game duration
+        // Game ends after 2 minutes (Requirement 3.1, 3.2)
         if gameTime >= maxGameDuration {
             stopGame()
             return
@@ -336,7 +337,7 @@ struct FlameView: View {
                         .foregroundColor(.gray)
                 }
             } else {
-                // Animated flame
+                // Animated flame with intensity meter (Requirement 3.1, 3.2)
                 VStack(spacing: -20) {
                     // Main flame body
                     ZStack {

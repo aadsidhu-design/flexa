@@ -224,6 +224,8 @@ class MediaPipePoseProvider: NSObject, ObservableObject {
             return nil
         }
         
+        FlexaLog.vision.debug("📸 [CAMERA-POSE] Frame received - timestamp: \(String(format: "%.3f", timestamp)), landmarks count: \(landmarks.count)")
+        
         // MediaPipe landmark indices:
         // 0: nose, 11: left shoulder, 12: right shoulder
         // 13: left elbow, 14: right elbow, 15: left wrist, 16: right wrist
@@ -243,23 +245,50 @@ class MediaPipePoseProvider: NSObject, ObservableObject {
 
         // Log raw landmarks for debugging coordinate issues
         FlexaLog.vision.debug("🏴 [LANDMARK-RAW] Nose: (\(String(format: "%.4f", nose.x)), \(String(format: "%.4f", nose.y))) | LeftWrist: (\(String(format: "%.4f", leftWrist.x)), \(String(format: "%.4f", leftWrist.y))) | RightWrist: (\(String(format: "%.4f", rightWrist.x)), \(String(format: "%.4f", rightWrist.y)))")
+        
+        // Log 3D coordinates
+        FlexaLog.vision.debug("🏴 [LANDMARK-3D] LeftShoulder: (\(String(format: "%.4f", leftShoulder.x)), \(String(format: "%.4f", leftShoulder.y)), \(String(format: "%.4f", leftShoulder.z))) | RightShoulder: (\(String(format: "%.4f", rightShoulder.x)), \(String(format: "%.4f", rightShoulder.y)), \(String(format: "%.4f", rightShoulder.z)))")
+        
+        // Log visibility/confidence scores
+        FlexaLog.vision.debug("🏴 [LANDMARK-CONF] LeftWrist vis: \(String(format: "%.2f", leftWrist.visibility?.floatValue ?? 0)) | RightWrist vis: \(String(format: "%.2f", rightWrist.visibility?.floatValue ?? 0)) | Nose vis: \(String(format: "%.2f", nose.visibility?.floatValue ?? 0))")
 
-        let leftWristPoint = getNormalizedMirroredPoint(leftWrist, label: "LeftWrist")
-        let rightWristPoint = getNormalizedMirroredPoint(rightWrist, label: "RightWrist")
-        let leftElbowPoint = getNormalizedMirroredPoint(leftElbow, label: "LeftElbow")
-        let rightElbowPoint = getNormalizedMirroredPoint(rightElbow, label: "RightElbow")
-        let leftShoulderPoint = getNormalizedMirroredPoint(leftShoulder, label: "LeftShoulder")
-        let rightShoulderPoint = getNormalizedMirroredPoint(rightShoulder, label: "RightShoulder")
-        let nosePoint = getNormalizedMirroredPoint(nose, label: "Nose")
-        let leftHipPoint = getNormalizedMirroredPoint(leftHip, label: "LeftHip")
-        let rightHipPoint = getNormalizedMirroredPoint(rightHip, label: "RightHip")
-        let leftEyePoint = getNormalizedMirroredPoint(leftEye, label: "LeftEye")
-        let rightEyePoint = getNormalizedMirroredPoint(rightEye, label: "RightEye")
+    let leftWristPoint = normalizedMirroredPointIfValid(leftWrist, label: "LeftWrist")
+    let rightWristPoint = normalizedMirroredPointIfValid(rightWrist, label: "RightWrist")
+    let leftElbowPoint = normalizedMirroredPointIfValid(leftElbow, label: "LeftElbow")
+    let rightElbowPoint = normalizedMirroredPointIfValid(rightElbow, label: "RightElbow")
+    let leftShoulderPoint = normalizedMirroredPointIfValid(leftShoulder, label: "LeftShoulder")
+    let rightShoulderPoint = normalizedMirroredPointIfValid(rightShoulder, label: "RightShoulder")
+    let nosePoint = normalizedMirroredPointIfValid(nose, label: "Nose")
+    // Fallback: If hip is not found, use MediaPipe estimated keypoint (midpoint between shoulders and knees if available)
+    var leftHipPoint = normalizedMirroredPointIfValid(leftHip, label: "LeftHip")
+    var rightHipPoint = normalizedMirroredPointIfValid(rightHip, label: "RightHip")
+    // If leftHipPoint is nil, estimate using midpoint between leftShoulder and leftKnee if available
+    if leftHipPoint == nil, landmarks.count > 25 {
+        let leftKnee = landmarks[25]
+        let leftShoulderPoint = normalizedMirroredPointIfValid(leftShoulder, label: "LeftShoulder")
+        let leftKneePoint = normalizedMirroredPointIfValid(leftKnee, label: "LeftKnee")
+        if let lsp = leftShoulderPoint, let lkp = leftKneePoint {
+            leftHipPoint = CGPoint(x: (lsp.x + lkp.x) / 2.0, y: (lsp.y + lkp.y) / 2.0)
+        }
+    }
+    // If rightHipPoint is nil, estimate using midpoint between rightShoulder and rightKnee if available
+    if rightHipPoint == nil, landmarks.count > 26 {
+        let rightKnee = landmarks[26]
+        let rightShoulderPoint = normalizedMirroredPointIfValid(rightShoulder, label: "RightShoulder")
+        let rightKneePoint = normalizedMirroredPointIfValid(rightKnee, label: "RightKnee")
+        if let rsp = rightShoulderPoint, let rkp = rightKneePoint {
+            rightHipPoint = CGPoint(x: (rsp.x + rkp.x) / 2.0, y: (rsp.y + rkp.y) / 2.0)
+        }
+    }
+    let leftEyePoint = normalizedMirroredPointIfValid(leftEye, label: "LeftEye")
+    let rightEyePoint = normalizedMirroredPointIfValid(rightEye, label: "RightEye")
 
         let neckPoint: CGPoint? = {
+            // Only compute neck when both shoulder points are available
+            guard let l = leftShoulderPoint, let r = rightShoulderPoint else { return nil }
             return CGPoint(
-                x: (leftShoulderPoint.x + rightShoulderPoint.x) / 2.0,
-                y: (leftShoulderPoint.y + rightShoulderPoint.y) / 2.0
+                x: (l.x + r.x) / 2.0,
+                y: (l.y + r.y) / 2.0
             )
         }()
 
@@ -341,6 +370,38 @@ class MediaPipePoseProvider: NSObject, ObservableObject {
         }
         
         return result
+    }
+
+    /// Return a normalized & mirrored point if the landmark is valid and within bounds.
+    /// If the landmark is outside the 0..1 range or has low confidence, return nil to mark it as unavailable.
+    private func normalizedMirroredPointIfValid(_ landmark: NormalizedLandmark, label: String = "") -> CGPoint? {
+        // Use raw values to detect out-of-bounds
+        let rawX = CGFloat(landmark.x)
+        let rawY = CGFloat(landmark.y)
+
+        // A simple confidence heuristic using MediaPipe visibility/presence
+        let visibility = landmark.visibility?.floatValue ?? 0
+        let presence = landmark.presence?.floatValue ?? 0
+        let combinedConfidence = (visibility + presence) / 2.0
+
+        // Reject obviously invalid coordinates or very low confidence
+        if rawX.isNaN || rawY.isNaN || rawX.isInfinite || rawY.isInfinite {
+            FlexaLog.vision.debug("⚠️ [LANDMARK-INVALID] \(label) invalid numeric values: \(rawX), \(rawY)")
+            return nil
+        }
+
+        if rawX < 0.0 || rawX > 1.0 || rawY < 0.0 || rawY > 1.0 {
+            FlexaLog.vision.debug("⚠️ [LANDMARK-INVALID] \(label) out of bounds RAW(\(String(format: "%.4f", rawX)), \(String(format: "%.4f", rawY))) - marking as unavailable")
+            return nil
+        }
+
+        // Threshold is conservative; callers can still check confidence on the returned keypoint
+        if combinedConfidence < 0.12 {
+            FlexaLog.vision.debug("⚠️ [LANDMARK-LOWCONF] \(label) low confidence=\(String(format: "%.2f", combinedConfidence)) - marking as unavailable")
+            return nil
+        }
+
+        return getNormalizedMirroredPoint(landmark, label: label)
     }
 
     deinit {

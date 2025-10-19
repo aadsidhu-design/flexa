@@ -147,6 +147,9 @@ struct CustomExerciseGameView: View {
         let sessionData = buildSessionData()
         self.sessionData = sessionData
 
+    // Record completion in CustomExerciseManager to update counters and averages
+    CustomExerciseManager.shared.recordCompletion(for: exercise.id, rom: sessionData.maxROM, sparc: sessionData.sparcScore)
+
         navigationCoordinator.showAnalyzing(sessionData: sessionData)
     }
 

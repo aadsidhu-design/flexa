@@ -10,26 +10,18 @@ struct WallClimbersGameView: View {
     @State private var isGameActive = false
     @State private var gameTimer: Timer?
     @State private var lastWristY: Double = 0.5
-    @State private var climbingPhase: ClimbingPhase = .waitingToStart
+    @State private var climbingPhase: CameraRepDetector.ClimbingPhase = .waitingToStart
     @State private var showingAnalyzing = false
     @State private var showingResults = false
     @State private var sessionData: ExerciseSessionData?
     @State private var hasInitializedGame = false
     @State private var reps: Int = 0
-    @State private var currentRepStartY: Double = 0
-    @State private var currentRepMaxY: Double = 0
     @State private var screenSize: CGSize = UIScreen.main.bounds.size
+    @State private var repDetector: CameraRepDetector = CameraRepDetector(minimumInterval: 0.5)
     
     // Game constants
     private let maxAltitude: Double = 1000
     private let climbThreshold: Double = 0.08  // Less sensitive for cleaner rep detection
-    private let repMinimumDistance: Double = 100  // Minimum pixel distance for valid rep
-    
-    enum ClimbingPhase {
-        case waitingToStart
-        case goingUp
-        case goingDown
-    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -121,10 +113,8 @@ struct WallClimbersGameView: View {
         altitude = 0
         gameTime = 0
         lastWristY = 0
-        climbingPhase = .waitingToStart
-        currentRepStartY = 0
-        currentRepMaxY = 0
         reps = 0
+        repDetector.resetWallClimbersState()
     }
     
     private func startGame() {
@@ -176,17 +166,17 @@ struct WallClimbersGameView: View {
         // Feed SPARC analyzer with the active wrist to capture smoothness without UI artifacts
         let activeSide = keypoints.phoneArm
         if let activeWrist = (activeSide == .left) ? keypoints.leftWrist : keypoints.rightWrist {
-            let mapped = CoordinateMapper.mapVisionPointToScreen(activeWrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+            let mapped = CoordinateMapper.mapVisionPointToScreen(activeWrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
             let wristPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
             motionService.sparcService.addCameraMovement(position: wristPos, timestamp: currentTime)
         } else {
             // Fallback to whichever wrist is currently visible to keep data flowing
             if let left = keypoints.leftWrist {
-                let mapped = CoordinateMapper.mapVisionPointToScreen(left, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+                let mapped = CoordinateMapper.mapVisionPointToScreen(left, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
                 let leftPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
                 motionService.sparcService.addCameraMovement(position: leftPos, timestamp: currentTime)
             } else if let right = keypoints.rightWrist {
-                let mapped = CoordinateMapper.mapVisionPointToScreen(right, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+                let mapped = CoordinateMapper.mapVisionPointToScreen(right, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
                 let rightPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
                 motionService.sparcService.addCameraMovement(position: rightPos, timestamp: currentTime)
             }
@@ -203,78 +193,50 @@ struct WallClimbersGameView: View {
         
         // Use screen-space Y position (pixels) for more accurate distance tracking
         guard let wrist = activeWrist else { return }
-        let mappedWrist = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
-        let currentWristY = Double(mappedWrist.y)
+    let mappedWrist = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
+        let currentWristY = CGFloat(mappedWrist.y)
         
         // Smooth the position
-        let alpha = 0.25
-        let smoothY = alpha * currentWristY + (1 - alpha) * lastWristY
-        let deltaY = smoothY - lastWristY  // Positive = moving down, Negative = moving up
+        let alpha: CGFloat = 0.25
+        let smoothY = alpha * currentWristY + (1 - alpha) * CGFloat(lastWristY)
         
-        switch climbingPhase {
-        case .waitingToStart:
-            // Start tracking when arm moves up significantly
-            if deltaY < -climbThreshold * screenSize.height {
-                climbingPhase = .goingUp
-                currentRepStartY = smoothY
-                currentRepMaxY = smoothY
-                FlexaLog.game.debug("🧗 [WallClimbers] Starting rep — startY=\(String(format: "%.1f", smoothY))")
-            }
+        // Get current ROM
+        var currentROM = motionService.currentROM
+        if currentROM <= 0 {
+            let rawArmpitROM = keypoints.getArmpitROM(side: activeSide)
+            currentROM = motionService.validateAndNormalizeROM(rawArmpitROM)
+        }
+        
+        // Process motion through CameraRepDetector
+        let result = repDetector.processWallClimbersMotion(
+            wristY: smoothY,
+            rom: currentROM,
+            threshold: climbThreshold,
+            screenHeight: screenSize.height
+        )
+        
+        // Check if rep was detected
+        if result.repDetected {
+            let minimumThreshold = motionService.getMinimumROMThreshold(for: .wallClimbers)
             
-        case .goingUp:
-            // Track highest point
-            if smoothY < currentRepMaxY {
-                currentRepMaxY = smoothY
-            }
-            
-            // Detect arm coming back down
-            if deltaY > climbThreshold * screenSize.height {
-                climbingPhase = .goingDown
+            if result.peakROM >= minimumThreshold {
+                motionService.recordCameraRepCompletion(rom: result.peakROM)
+                reps = motionService.currentReps
                 
-                let climbDistance = currentRepStartY - currentRepMaxY  // Pixels traveled upward
-                FlexaLog.game.debug("🧗 [WallClimbers] Arm coming down — traveled=\(String(format: "%.1f", climbDistance))px, minimum=\(repMinimumDistance)px")
+                // Update game metrics
+                altitude = min(maxAltitude, altitude + Double(result.distanceTraveled) * 2.5)  // Scale distance to meters
+                score += Int(result.distanceTraveled)
                 
-                if climbDistance >= repMinimumDistance {
-                    // Valid rep - calculate ROM and record
-                    var validatedROM = motionService.currentROM
-                    if validatedROM <= 0 {
-                        let rawArmpitROM = keypoints.getArmpitROM(side: activeSide)
-                        validatedROM = motionService.validateAndNormalizeROM(rawArmpitROM)
-                    }
-                    let minimumThreshold = motionService.getMinimumROMThreshold(for: .wallClimbers)
-                    
-                    if validatedROM >= minimumThreshold {
-                        motionService.recordCameraRepCompletion(rom: validatedROM)
-                        reps = motionService.currentReps
-                        
-                        // Update game metrics
-                        altitude = min(maxAltitude, altitude + climbDistance * 2.5)  // Scale distance to meters
-                        score += Int(climbDistance)
-                        
-                        FlexaLog.game.info("🧗 [WallClimbers] ✅ Rep #\(reps) completed! ROM: \(String(format: "%.1f", validatedROM))°, Distance: \(String(format: "%.0f", climbDistance))px, Altitude: \(Int(altitude))m")
-                        
-                        // Haptic feedback
-                        HapticFeedbackService.shared.successHaptic()
-                    } else {
-                        FlexaLog.game.debug("🧗 [WallClimbers] ⚠️ Rep ROM too low: \(String(format: "%.1f", validatedROM))° < \(String(format: "%.1f", minimumThreshold))°")
-                    }
-                }
-            }
-            
-        case .goingDown:
-            // Wait for arm to stabilize or start going up again
-            if deltaY < -climbThreshold * screenSize.height {
-                climbingPhase = .goingUp
-                currentRepStartY = smoothY
-                currentRepMaxY = smoothY
-                FlexaLog.game.debug("🧗 [WallClimbers] Starting new rep — startY=\(String(format: "%.1f", smoothY))")
-            } else if abs(deltaY) < 0.02 * screenSize.height {
-                // Arm stabilized at rest
-                climbingPhase = .waitingToStart
+                FlexaLog.game.info("🧗 [WallClimbers] ✅ Rep #\(reps) completed! ROM: \(String(format: "%.1f", result.peakROM))°, Distance: \(String(format: "%.0f", result.distanceTraveled))px, Altitude: \(Int(altitude))m")
+                
+                // Haptic feedback
+                HapticFeedbackService.shared.successHaptic()
+            } else {
+                FlexaLog.game.debug("🧗 [WallClimbers] ⚠️ Rep ROM too low: \(String(format: "%.1f", result.peakROM))° < \(String(format: "%.1f", minimumThreshold))°")
             }
         }
         
-        lastWristY = smoothY
+        lastWristY = Double(smoothY)
     }
     
     private func endGame() {

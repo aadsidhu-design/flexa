@@ -32,7 +32,7 @@ class CustomRepDetector: ObservableObject {
     // Velocity filtering for more accurate rep detection
     private var lastTimestamp: TimeInterval = 0
     private var velocity: Double = 0
-    private var minVelocityThreshold: Double = 0.02 // m/s for handheld, degrees/s for camera
+    private var minVelocityThreshold: Double = 0.015 // m/s for handheld, degrees/s for camera (tuned)
     
     enum RepState {
         case idle
@@ -62,9 +62,51 @@ class CustomRepDetector: ObservableObject {
         self.hasSmoothedValue = false
         self.lastTimestamp = 0
         self.velocity = 0
+        // Adaptive velocity threshold based on expected movement scale
         self.minVelocityThreshold = exercise.trackingMode == .handheld ? 0.02 : 5.0
+        // Scale velocity threshold based on configured minimum ROM if available
+        let expectedROM = exercise.repParameters.minimumROMThreshold
+        if expectedROM > 0 {
+            self.minVelocityThreshold *= max(0.5, min(2.0, expectedROM / 30.0))
+        }
         
         FlexaLog.motion.info("🎯 [CustomRep] Session started for '\(exercise.name)' — \(exercise.trackingMode.rawValue) | \(exercise.repParameters.movementType.rawValue)")
+
+        // Quick calibration: gather a small sample window to tune minimum thresholds
+        performQuickCalibration(duration: 0.8)
+    }
+
+    private var calibrationSamples: [Double] = []
+    private func performQuickCalibration(duration: TimeInterval) {
+        // Reset samples
+        calibrationSamples.removeAll()
+        let start = Date()
+        // Schedule a lightweight sampler on the main queue that collects currentROM for the given duration
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { t in
+                let now = Date()
+                if now.timeIntervalSince(start) >= duration {
+                    t.invalidate()
+                    // Compute recommended minimum threshold based on sampled amplitude
+                    if !self.calibrationSamples.isEmpty {
+                        let maxSample = self.calibrationSamples.max() ?? 0
+                        // Set minimum ROM to 30-50% of observed amplitude but at least 5
+                        let suggested = max(5.0, min(180.0, maxSample * 0.35))
+                        FlexaLog.motion.info("🧪 [CustomRep] Calibration suggested minROM=\(String(format: "%.1f", suggested)) based on samples")
+                        // Apply to exercise parameters if reasonable
+                        if var ex = self.exercise {
+                            ex.repParameters.minimumROMThreshold = max(ex.repParameters.minimumROMThreshold, suggested)
+                            self.exercise = ex
+                        }
+                    }
+                    return
+                }
+                // Append current ROM value
+                self.calibrationSamples.append(self.currentROM)
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }
     }
     
     func stopSession() {
@@ -180,7 +222,8 @@ class CustomRepDetector: ObservableObject {
 
         let fullRotation = 2 * Double.pi
         if abs(circularAngleAccumulator) >= fullRotation {
-            let romValue = circularMaxRadius * 100
+        // ROM as degrees is not meaningful for circular full rotations; use radius as proxy (cm)
+        let romValue = circularMaxRadius * 100
             if attemptRep(romValue: romValue,
                           timestamp: timestamp,
                           cooldown: exercise.repParameters.repCooldown,
@@ -293,7 +336,8 @@ class CustomRepDetector: ObservableObject {
         }
         smoothedValue = currentSmoothedValue
         
-        let romThreshold = max(threshold, 5)
+    // Ensure minimum sensible ROM threshold (5: degrees or cm depending on mode)
+    let romThreshold = max(threshold, 5)
         let filtered = currentSmoothedValue
         let magnitude = abs(filtered)
         if magnitude > currentROM {
@@ -311,7 +355,8 @@ class CustomRepDetector: ObservableObject {
         let deltaThreshold = max(romThreshold * 0.08, 1.25)
         
         // Require minimum velocity to count as real movement (filters drift/noise)
-        let isSignificantMovement = abs(delta) > deltaThreshold && velocity > minVelocityThreshold
+    // Additional guard: ignore movement spikes when velocity is unrealistically high
+    let isSignificantMovement = abs(delta) > deltaThreshold && velocity > minVelocityThreshold && velocity < 10000
 
         switch repState {
         case .idle:
@@ -393,7 +438,15 @@ class CustomRepDetector: ObservableObject {
     private func attemptRep(romValue: Double, timestamp: TimeInterval, cooldown: Double, context: String) -> Bool {
         guard timestamp - lastRepTimestamp >= cooldown else { return false }
 
-        let sanitizedROM = max(romValue, 0)
+        // Sanitize and clamp ROM values to reasonable physiological ranges
+        var sanitizedROM = max(romValue, 0)
+        if sanitizedROM.isNaN || sanitizedROM.isInfinite { return false }
+        // Clamp for handheld degrees/regression: 0..180 deg or radius in cm up to 200 cm
+        if context.lowercased().contains("circular") {
+            sanitizedROM = max(0, min(sanitizedROM, 200.0))
+        } else {
+            sanitizedROM = max(0, min(sanitizedROM, 180.0))
+        }
         guard sanitizedROM.isFinite else { return false }
 
         currentReps += 1

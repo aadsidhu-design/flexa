@@ -534,7 +534,7 @@ private struct ActiveSessionView: View {
             let activeSide = keypoints.phoneArm
             _ = (activeSide == .left) ? keypoints.leftWrist : keypoints.rightWrist
         if let wrist = motionService.poseKeypoints?.leftWrist {
-            let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize)
+            let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
             let wristPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
                 motionService.sparcService.addCameraMovement(position: wristPos, timestamp: timestamp)
             }

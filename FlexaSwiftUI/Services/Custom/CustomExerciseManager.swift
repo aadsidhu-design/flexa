@@ -70,6 +70,12 @@ class CustomExerciseManager: ObservableObject {
         customExercises[index] = exercise
         saveExercises()
         
+        // Notify other systems (Goals, UI progress circles) about completion
+        NotificationCenter.default.post(
+            name: .customExerciseCompleted,
+            object: nil,
+            userInfo: ["exerciseId": exerciseId, "rom": rom, "sparc": sparc]
+        )
         FlexaLog.lifecycle.info("🎉 [CustomExercise] Recorded completion #\(exercise.timesCompleted) for '\(exercise.name)'")
     }
     

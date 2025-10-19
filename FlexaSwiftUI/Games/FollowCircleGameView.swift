@@ -48,7 +48,8 @@ struct FollowCircleGameView: View {
     @State private var hasLoggedBaselineCapture = false
     @State private var hasLoggedMissingTransform = false
     
-    // Rep tracking now handled by Universal3D engine
+    // Circle completion rep counting handled by HandheldRepDetector (Requirement 2.1)
+    // Each complete circle = 1 rep
     
     // Direct cursor control - no smoothing for perfect synchronization
     @State private var smoothedCursorPosition: CGPoint = CGPoint(x: 195, y: 422)
@@ -57,6 +58,7 @@ struct FollowCircleGameView: View {
     private let gracePeriodDuration: TimeInterval = 5.0  // 5 seconds to get ready
     private let offCircleGraceDuration: TimeInterval = 2.5
     
+    @State private var pendingGameSetup = false
     var body: some View {
         if !calibrationCheck.isCalibrated {
             CalibrationRequiredView()
@@ -75,7 +77,19 @@ struct FollowCircleGameView: View {
                 )
                 .ignoresSafeArea()
                 .onAppear {
-                    screenSize = UIScreen.main.bounds.size
+                    let newSize = UIScreen.main.bounds.size
+                    if screenSize != newSize {
+                        screenSize = newSize
+                    }
+                    // Defer setup until screenSize is set
+                    pendingGameSetup = true
+                }
+                .onChange(of: screenSize) { newSize in
+                    if pendingGameSetup && !isGameActive && !showingAnalyzing && !showingResults && !gameHasEnded {
+                        FlexaLog.game.info("🎯 [FollowCircle] Triggering deferred setupGame after screenSize set: w=\(Int(newSize.width)), h=\(Int(newSize.height))")
+                        setupGame()
+                        pendingGameSetup = false
+                    }
                 }
                 .onTapGesture(count: 2) {
                     // Double tap to recalibrate center position
@@ -84,10 +98,26 @@ struct FollowCircleGameView: View {
                 
                 // UI Overlay - Only Score
                 VStack {
+                    // Rep progress bar (fills at 17 reps)
+                    GeometryReader { geometry in
+                        let barWidth = geometry.size.width - 40
+                        let progress = min(Double(reps) / 17.0, 1.0)
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .frame(width: barWidth, height: 14)
+                                .foregroundColor(Color.gray.opacity(0.25))
+                            Capsule()
+                                .frame(width: barWidth * progress, height: 14)
+                                .foregroundColor(.green)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                    }
+                    .frame(height: 24)
+
                     // Score at top
                     HStack {
                         Spacer()
-                        
                         Text("\(gameScore)")
                             .font(.title)
                             .fontWeight(.bold)
@@ -96,11 +126,10 @@ struct FollowCircleGameView: View {
                             .padding(.vertical, 10)
                             .background(Color.black.opacity(0.7))
                             .cornerRadius(20)
-                        
                         Spacer()
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 10)
+                    .padding(.top, 4)
                     
                     // Grace period countdown
                     if !gracePeriodEnded {
@@ -304,6 +333,8 @@ struct FollowCircleGameView: View {
         let tolerance: CGFloat = 8
         let isCurrentlyTouching = distance <= (guideCircleRadius + cursorRadius + tolerance)
         
+        // Score increases while touching guide circle (Requirement 2.1)
+        // Streak multiplier for consecutive touches (Requirement 2.1)
         if isCurrentlyTouching {
             if !isTouchingCircle {
                 isTouchingCircle = true
@@ -339,7 +370,7 @@ struct FollowCircleGameView: View {
             }
         }
         
-        // End session once the cursor has been away from the guide for the timeout duration
+        // Game ends after losing contact (Requirement 2.1)
         if gracePeriodEnded,
            let offStart = offCircleStartTime,
            !isTouchingCircle,
@@ -350,7 +381,7 @@ struct FollowCircleGameView: View {
             completeSession(trigger: "no_contact_timeout")
         }
         
-        // Auto-end game after 2 minutes maximum
+        // Game ends after 2 minutes (Requirement 2.1)
         if gameTime >= 120.0 && !gameHasEnded {
             FlexaLog.game.info("🎯 [FollowCircle] Maximum time reached — ending session")
             completeSession(trigger: "max_duration")
@@ -362,6 +393,7 @@ struct FollowCircleGameView: View {
     }
     
     private func updateUserCirclePosition() {
+        // Green cursor follows ARKit 3D position (Requirement 2.1)
         guard let transform = motionService.currentARKitTransform else {
             // No ARKit data available - center cursor
             userCirclePosition = CGPoint(x: screenSize.width / 2, y: screenSize.height / 2)
@@ -388,9 +420,11 @@ struct FollowCircleGameView: View {
             return
         }
         
-        // Calculate relative movement from baseline
-        let relX = pos.x - baseline.x  // Horizontal: right/left
-        let relZ = pos.z - baseline.z  // Vertical: up/down
+    // Calculate relative movement from baseline
+    let relX = pos.x - baseline.x  // Horizontal: right/left
+    // Use ARKit Y (forward/back) for vertical screen mapping. ARKit Y+ is forward,
+    // but screen Y+ is down, so we negate when mapping to screen space.
+    let relY = pos.y - baseline.y  // Forward/back (use for vertical movement)
         
         let centerX = screenSize.width / 2
         let centerY = screenSize.height / 2
@@ -399,10 +433,11 @@ struct FollowCircleGameView: View {
         let horizontalRange = min(screenSize.width / 2 - 40, 250.0)
         let verticalRange = min(screenSize.height / 2 - 60, 300.0)
         
-        // Apply gain for 1:1 hand tracking
-        let gain: Double = 4.5
-        let screenDeltaX = relX * gain
-        let screenDeltaY = relZ * gain
+    // Apply gain for 1:1 hand tracking
+    let gain: Double = 4.5
+    let screenDeltaX = relX * gain
+    // Forward (ARKit Y+) should move the cursor UP on-screen, so negate relY
+    let screenDeltaY = -relY * gain
         
         // Clamp to normalized range
         let nx = max(-1.0, min(1.0, screenDeltaX))
@@ -433,6 +468,7 @@ struct FollowCircleGameView: View {
             return
         }
         
+        // White guide circle orbits in circular path (Requirement 2.1)
         // Gradually increase speed for difficulty progression
         guideCircleSpeed += 0.0005
         
@@ -453,7 +489,7 @@ struct FollowCircleGameView: View {
         let randomVariation = sin(gameTime * 2) * 0.1
         let currentAngle = guideCircleAngle + randomVariation
         
-        // Calculate new position
+        // Calculate new position in circular path
         let newX = guideCircleCenter.x + cos(currentAngle) * guideCircleOrbitRadius
         let newY = guideCircleCenter.y + sin(currentAngle) * guideCircleOrbitRadius
         
