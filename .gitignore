@@ -117,3 +117,5 @@ build_*.log
 
 .gemini/
 gha-creds-*.json
+Pods/MediaPipeTasksCommon/frameworks/
+.venv310/
