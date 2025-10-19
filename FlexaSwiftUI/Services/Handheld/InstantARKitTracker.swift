@@ -78,6 +78,21 @@ final class InstantARKitTracker: NSObject, ObservableObject, ARSessionDelegate {
             configuration.worldAlignment = .gravity
             configuration.planeDetection = [.horizontal, .vertical]
             
+            // HIGH QUALITY VIDEO - Use highest resolution available (not VGA)
+            if #available(iOS 16.0, *) {
+                // Use 4K video format if available for maximum quality
+                let supportedFormats = ARWorldTrackingConfiguration.supportedVideoFormats
+                if let highQualityFormat = supportedFormats.first(where: { format in
+                    format.imageResolution.width >= 1920 && format.framesPerSecond >= 60
+                }) {
+                    configuration.videoFormat = highQualityFormat
+                    FlexaLog.motion.info("📍 [ARKit-GPU] Using high-quality video: \(highQualityFormat.imageResolution.width)x\(highQualityFormat.imageResolution.height) @ \(highQualityFormat.framesPerSecond)fps")
+                } else if let format60fps = supportedFormats.first(where: { $0.framesPerSecond >= 60 }) {
+                    configuration.videoFormat = format60fps
+                    FlexaLog.motion.info("📍 [ARKit-GPU] Using 60fps video: \(format60fps.imageResolution.width)x\(format60fps.imageResolution.height)")
+                }
+            }
+            
             // GPU optimizations
             if #available(iOS 12.0, *) {
                 configuration.environmentTexturing = .automatic
@@ -88,13 +103,11 @@ final class InstantARKitTracker: NSObject, ObservableObject, ARSessionDelegate {
                 configuration.frameSemantics.insert(.personSegmentationWithDepth)
             }
             
-            // Enable feature tracking for robust object detection
-            if #available(iOS 16.0, *) {
-                configuration.frameSemantics.insert(.personSegmentationWithDepth)
-            }
-
+            // Maximum tracking quality
+            configuration.isAutoFocusEnabled = true
+            
             self.arSession.run(configuration, options: [.resetTracking, .removeExistingAnchors])
-            FlexaLog.motion.info("📍 [ARKit-GPU] GPU-accelerated world tracking started with Metal support")
+            FlexaLog.motion.info("📍 [ARKit-GPU] GPU-accelerated world tracking started with Metal support and high-quality video")
         }
     }
 
@@ -119,6 +132,10 @@ final class InstantARKitTracker: NSObject, ObservableObject, ARSessionDelegate {
         let timestamp = frame.timestamp
         let cameraTransform = frame.camera.transform
         
+        // Store camera transform for Tier 1
+        lastCameraTransform = cameraTransform
+        
+        // Use camera transform as primary source
         updateTrackingData(transform: cameraTransform, timestamp: timestamp, tierLabel: "camera")
 
         if !isFullyInitialized {
@@ -129,16 +146,54 @@ final class InstantARKitTracker: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
     
+    // MARK: - Face Anchor Fallback (Tier 2)
+    
+    func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+        handleAnchors(anchors)
+    }
+    
+    func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+        handleAnchors(anchors)
+    }
+    
+    private func handleAnchors(_ anchors: [ARAnchor]) {
+        // Extract face anchors for Tier 2 fallback
+        let faceAnchors = anchors.compactMap { $0 as? ARFaceAnchor }
+        if !faceAnchors.isEmpty {
+            lastFaceAnchors = faceAnchors
+        }
+        
+        // Store object anchors for additional stability
+        let objectAnchors = anchors.filter { !($0 is ARFaceAnchor) }
+        if !objectAnchors.isEmpty {
+            lastObjectAnchors = objectAnchors.map { AnchorInfo(transform: $0.transform, identifier: $0.identifier) }
+        }
+    }
+    
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-        DispatchQueue.main.async {
-            self.trackingQuality = camera.trackingState
+        dataQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                self.trackingQuality = camera.trackingState
+            }
+            
             switch camera.trackingState {
             case .normal:
-                self.anchorSource = "camera+object"
+                self.currentTier = .cameraPlusObject
+                DispatchQueue.main.async {
+                    self.anchorSource = "camera+object"
+                }
                 FlexaLog.motion.info("📍 [ARKit-GPU] TIER 1 ACTIVE: Camera+Objects (GPU accelerated)")
+                
             case .notAvailable:
+                self.currentTier = .facePlusObject
+                self.useFaceAnchorFallback()
+                DispatchQueue.main.async {
+                    self.anchorSource = "face+object"
+                }
                 FlexaLog.motion.warning("📍 [ARKit-GPU] TIER 2 FALLBACK: Switching to Face+Objects")
-                self.anchorSource = "face+object"
+                
             case .limited(let reason):
                 let reasonString: String
                 switch reason {
@@ -153,9 +208,27 @@ final class InstantARKitTracker: NSObject, ObservableObject, ARSessionDelegate {
                 @unknown default:
                     reasonString = "Unknown"
                 }
-                self.anchorSource = "face+object"
+                self.currentTier = .facePlusObject
+                self.useFaceAnchorFallback()
+                DispatchQueue.main.async {
+                    self.anchorSource = "face+object"
+                }
                 FlexaLog.motion.warning("📍 [ARKit-GPU] TIER 2 FALLBACK: Limited (\(reasonString)) → Face+Objects")
             }
+        }
+    }
+    
+    private func useFaceAnchorFallback() {
+        // Use face anchor if available, otherwise fall back to last known camera transform
+        if let faceAnchor = lastFaceAnchors.first {
+            let timestamp = Date().timeIntervalSince1970
+            updateTrackingData(transform: faceAnchor.transform, timestamp: timestamp, tierLabel: "face")
+            FlexaLog.motion.debug("📍 [ARKit-GPU] Using face anchor for position tracking")
+        } else if let cameraTransform = lastCameraTransform {
+            // No face anchor available, use last known camera transform
+            let timestamp = Date().timeIntervalSince1970
+            updateTrackingData(transform: cameraTransform, timestamp: timestamp, tierLabel: "camera-cached")
+            FlexaLog.motion.debug("📍 [ARKit-GPU] Using cached camera transform (no face anchor available)")
         }
     }
 

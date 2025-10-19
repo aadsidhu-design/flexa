@@ -61,7 +61,7 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     private let memoryCheckInterval: TimeInterval = 2.0 // Check every 2 seconds (more frequent)
     
     // SPARC publish throttle: enforce a more responsive cadence
-    private let sparcPublishInterval: TimeInterval = 0.25
+    private let sparcPublishInterval: TimeInterval = 0.05
     private var lastSPARCUpdateTime: Date = .distantPast
     // Smoothing for published SPARC values (0..1) - lower alpha to track changes faster
     private var sparcSmoothingAlpha: Double = 0.5
@@ -155,19 +155,26 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
         }
     }
     
-    // MARK: - ARKit Position Data Input (for ROM games)
+    // MARK: - ARKit Position Data Input (for handheld games)
     func addARKitPositionData(timestamp: TimeInterval, position: SIMD3<Float>) {
-        // Allow unlimited position data for accurate calculations
-        
+        // Store position data for trajectory-based SPARC calculation
+        // Sanitize position and timestamp before storing
+        guard position.x.isFinite, position.y.isFinite, position.z.isFinite, timestamp.isFinite else {
+            FlexaLog.motion.warning("⚠️ [SPARC] Ignoring invalid ARKit position or timestamp")
+            return
+        }
         let posData = PositionData(timestamp: timestamp, position: position)
         positionBuffer.append(posData)
         
+        // Calculate arc length for ROM tracking
         if positionBuffer.count >= 2 {
             let arcLength = calculateARKitArcLength()
             if arcLengthHistory.count < maxBufferSize {
                 arcLengthHistory.append(arcLength)
             }
         }
+        
+        calculateARKitSPARC()
     }
     
     func reset() {
@@ -288,6 +295,54 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
                             let blended = self.blendSmoothnessComponents(spectral: spectral, consistency: consistency)
                             let smoothed = self.applyPublishingSmoothing(value: blended)
                             self.publishSPARC(value: smoothed, timestamp: now, dataSource: .vision, confidence: result.confidence)
+                        }
+                    } catch {
+                        self.handleSPARCCalculationError(error)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - ARKit-based SPARC Calculation (for handheld games)
+    private func calculateARKitSPARC() {
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+
+            let positions = self.positionBuffer.allElements
+            guard positions.count >= 10 else { return }
+
+            // Calculate velocity from position changes for smoothness analysis
+            var velocityMagnitudes: [Float] = []
+            for i in 1..<positions.count {
+                let prev = positions[i-1]
+                let curr = positions[i]
+                let dt = Float(curr.timestamp - prev.timestamp)
+                guard dt > 0 else { continue }
+                
+                let displacement = curr.position - prev.position
+                let velocity = simd_length(displacement) / dt
+                velocityMagnitudes.append(velocity)
+            }
+
+            guard velocityMagnitudes.count >= 10 else { return }
+
+            // Detrend the signal to focus on movement quality
+            let mean = velocityMagnitudes.reduce(0, +) / Float(velocityMagnitudes.count)
+            let detrendedSignal = velocityMagnitudes.map { abs($0 - mean) }
+
+            self.fftQueue.async {
+                autoreleasepool {
+                    do {
+                        // Use 60Hz sampling rate for ARKit (typical ARKit update rate)
+                        let result = try self.computeSPARCWithErrorHandling(signal: detrendedSignal, samplingRate: 60.0)
+                        let now = Date()
+                        if now.timeIntervalSince(self.lastSPARCUpdateTime) >= self.sparcPublishInterval {
+                            let spectral = max(0.0, min(100.0, result.smoothness))
+                            let consistency = self.calculateConsistencyScore(from: velocityMagnitudes, reference: self.consistencyReference)
+                            let blended = self.blendSmoothnessComponents(spectral: spectral, consistency: consistency)
+                            let smoothed = self.applyPublishingSmoothing(value: blended)
+                            self.publishSPARC(value: smoothed, timestamp: now, dataSource: .arkit, confidence: result.confidence)
                         }
                     } catch {
                         self.handleSPARCCalculationError(error)
@@ -433,7 +488,17 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     }
 
     private func publishSPARC(value: Double, timestamp: Date, dataSource: SPARCDataSource, confidence: Double) {
-        currentSPARC = value
+        // Sanitize value
+        var sanitized = value
+        if sanitized.isNaN || sanitized.isInfinite {
+            FlexaLog.motion.warning("⚠️ [SPARC] Computed SPARC was invalid (NaN/Inf). Falling back to 50.0")
+            sanitized = 50.0
+        }
+        let clamped = max(0.0, min(100.0, sanitized))
+        if clamped != sanitized {
+            FlexaLog.motion.warning("⚠️ [SPARC] SPARC value \(sanitized) clamped to \(clamped)")
+        }
+        currentSPARC = clamped
         lastSPARCUpdateTime = timestamp
         calculationFailures = 0
 
@@ -449,6 +514,11 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
             dataSource: dataSource
         )
         sparcDataPoints.append(dataPoint)
+
+        // Extra safety: if SPARC spikes unexpectedly, log recent arc lengths to aid diagnosis
+        if clamped > 95.0 || clamped < 5.0 {
+                FlexaLog.motion.debug("🔎 [SPARC] Unusual SPARC value: \(clamped). Recent arcLengths count=\(self.arcLengthHistory.count)")
+        }
     }
 
     private func recordSPARCValue(_ value: Double) {
@@ -574,6 +644,15 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
         // Memory check removed - allow SPARC calculations to proceed
         
         return computeSPARC(signal: signal, samplingRate: samplingRate)
+    }
+
+    // Public convenience helper so other modules can call the canonical SPARC implementation
+    // without needing to instantiate the full service and wiring. This method delegates
+    // to the internal computeSPARCWithErrorHandling implementation and returns the raw result.
+    static func computeSPARCStandalone(signal: [Float], samplingRate: Double) throws -> SPARCResult {
+        let service = SPARCCalculationService()
+        // Use the instance method to leverage existing validation/error handling
+        return try service.computeSPARCWithErrorHandling(signal: signal, samplingRate: samplingRate)
     }
     
     private func handleSPARCCalculationError(_ error: Error) {
