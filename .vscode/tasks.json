@@ -1,0 +1,119 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build FlexaSwiftUI (verify FollowCircle centering fix)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 14' clean build | tee /tmp/flexa_full_build.log",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (iPhone 16)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 16' clean build | tee /tmp/flexa_iphone16_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (iPhone 16) - verify handheld fixes",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 16' clean build | tee /tmp/flexa_handheld_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (generic) verify changes",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_handheld_generic_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify autocorrelation rep detection)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_autocorr_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify closure fixes)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 14' clean build | tee /tmp/flexa_closure_fix_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (final verify)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_final_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify ARKit rep detection integration)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_arkit_rep_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify fixes)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_verify_fixes_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify fixes)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_verify_fixes_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify fixes)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_verify_fixes_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify FollowCircle centering fix)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 14' clean build | tee /tmp/flexa_sim_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (iPhone 16)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 16' clean build | tee /tmp/flexa_iphone16_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (generic) verify changes",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'generic/platform=iOS' clean build | tee /tmp/flexa_generic_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (verify FollowCircle centering fix)",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 14' clean build | tee /tmp/flexa_sim14_build.log",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Build FlexaSwiftUI (iPhone 16) - verify handheld fixes",
+			"type": "shell",
+			"command": "xcodebuild -workspace FlexaSwiftUI.xcworkspace -scheme FlexaSwiftUI -destination 'platform=iOS Simulator,name=iPhone 16' clean build | tee /tmp/flexa_sim16_build.log",
+			"isBackground": false,
+			"group": "build"
+		}
+	]
+}
