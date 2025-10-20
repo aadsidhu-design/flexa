@@ -102,6 +102,12 @@ Display on HomeView goal circles
   - Valley threshold: `threshold * 0.4` → `threshold * 0.3`
   - Validation: Requires `peakAcceleration >= peakThreshold * 1.1`
   - Timeout: 1.0s → 1.2s
+  
+   User swings arm
+   ↓
+2. IMU detects acceleration peak (>0.18g)
+   ↓
+3. Detects direction reversal (peak→valley→opposite direction)
 
 - **Fruit Slicer Profile**:
   - Rep threshold: 0.10g → 0.12g
@@ -162,6 +168,24 @@ if !isPeakActive {
     }
 }
 ```
+- **Rep Detection Improvements**:
+  - Minimum samples: 15 → 20
+  - Sample window: 12 → 15
+  - Peak threshold: `threshold` → `max(threshold * 1.8, 0.18)`
+  - Valley threshold: `threshold * 0.4` → `threshold * 0.3`
+  - Validation: Requires `peakAcceleration >= peakThreshold * 1.1`
+  - Timeout: 1.0s → 1.2s
+  
+   User swings arm
+   ↓
+2. IMU detects acceleration peak (>0.18g)
+   ↓
+3. Detects direction reversal (peak→valley→opposite direction)
+
+- **Fruit Slicer Profile**:
+  - Rep threshold: 0.10g → 0.12g
+  - Debounce: 0.25s → 0.4s
+  - Min length: 6 → 8 samples
 
 ### **SPARC Smoothing**
 ```swift

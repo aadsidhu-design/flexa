@@ -33,7 +33,8 @@ Created dedicated IMU-based detector:
 - Uses peak detection state machine (same as FanTheFlameDetector)
 - Tracks ROM during swing for accurate per-rep values
 - Fires callback: `(repCount, direction, velocity, repROM)`
-
+Monitors pitch rotation rate (X-axis) for forward/backward motion
+- Uses peak detection state machine (same as FanTheFlameDetector)
 **Key Features**:
 ```swift
 // Thresholds

@@ -208,8 +208,10 @@ struct MakeYourOwnGameView: View {
             data.averageROM = average
         }
 
-        activeExercise = nil
-        NavigationCoordinator.shared.showAnalyzing(sessionData: data)
+    activeExercise = nil
+    // Post notification for central host to display analyzing (avoid direct navigation here)
+    let userInfo = motionService.buildSessionNotificationPayload(from: data)
+    NotificationCenter.default.post(name: NSNotification.Name("MakeYourOwnGameEnded"), object: nil, userInfo: userInfo)
     }
 
     private func cleanup() {

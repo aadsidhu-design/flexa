@@ -26,7 +26,7 @@ struct BalloonPopGameView: View {
     @State private var screenSize: CGSize = UIScreen.main.bounds.size
     @State private var repDetector: CameraRepDetector = CameraRepDetector(minimumInterval: 0.5)
     
-    private let gameDuration: TimeInterval = 60 // 1 minute
+    private let gameDuration: TimeInterval = 90 // 1 minute 30 seconds
     private let balloonSpawnInterval: TimeInterval = 1.5
     
     var body: some View {
@@ -45,37 +45,38 @@ struct BalloonPopGameView: View {
                 
                 // Only show pin if position is detected (wrist visible)
                 if activePosition != .zero {
-                    // SINGLE PIN visualization - cyan color for visibility
+                    // DART visualization - bright and visible
                     ZStack {
-                        // Pin tip (sharp point) - THE POPPING POINT directly at wrist position
+                        // Dart tip (sharp point) - THE POPPING POINT
                         Path { p in
                             let x = activePosition.x
                             let y = activePosition.y
-                            p.move(to: CGPoint(x: x, y: y - 10))  // Top point
-                            p.addLine(to: CGPoint(x: x - 8, y: y + 10))  // Bottom left
-                            p.addLine(to: CGPoint(x: x + 8, y: y + 10))  // Bottom right
+                            p.move(to: CGPoint(x: x, y: y - 15))  // Top point (longer)
+                            p.addLine(to: CGPoint(x: x - 10, y: y + 15))  // Bottom left (wider)
+                            p.addLine(to: CGPoint(x: x + 10, y: y + 15))  // Bottom right (wider)
                             p.closeSubpath()
                         }
-                        .fill(Color.cyan)
-                        .shadow(color: Color.cyan.opacity(0.6), radius: 8)
+                        .fill(Color.red)  // Red dart tip for better visibility
+                        .shadow(color: Color.red.opacity(0.8), radius: 10)
                         
-                        // Pin shaft (above the tip)
+                        // Dart shaft
                         Rectangle()
                             .fill(LinearGradient(
-                                gradient: Gradient(colors: [Color.cyan.opacity(0.7), Color.cyan]),
+                                gradient: Gradient(colors: [Color.orange, Color.red]),
                                 startPoint: .top,
                                 endPoint: .bottom
                             ))
-                            .frame(width: 5, height: 25)
-                            .position(x: activePosition.x, y: activePosition.y - 22)
+                            .frame(width: 6, height: 35)  // Slightly thicker and longer
+                            .position(x: activePosition.x, y: activePosition.y - 30)
                         
-                        // Pin head (small circle at top)
+                        // Dart head/fletching
                         Circle()
-                            .fill(Color.cyan)
-                            .frame(width: 14, height: 14)
-                            .position(x: activePosition.x, y: activePosition.y - 35)
-                            .shadow(color: Color.cyan.opacity(0.6), radius: 6)
+                            .fill(Color.yellow)
+                            .frame(width: 18, height: 18)
+                            .position(x: activePosition.x, y: activePosition.y - 48)
+                            .shadow(color: Color.yellow.opacity(0.8), radius: 8)
                     }
+                    .zIndex(100)  // Ensure dart is on top
                 }
             }
             
@@ -206,23 +207,35 @@ struct BalloonPopGameView: View {
         }
         
         // AUTO-DETECT which arm is being used (phoneArm from VisionPoseProvider)
-        activeArm = keypoints.phoneArm
+        var preferredArm = keypoints.phoneArm
+        var wrist = preferredArm == .left ? keypoints.leftWrist : keypoints.rightWrist
         
-        // ONLY track the active arm's wrist - ignore the other hand completely
-        let activeWrist = (activeArm == .left) ? keypoints.leftWrist : keypoints.rightWrist
-        
-        guard let wrist = activeWrist else {
-            // Active wrist not visible - hide pin
-            if activeArm == .left {
-                leftHandPosition = .zero
-            } else {
-                rightHandPosition = .zero
+        if wrist == nil {
+            // Fall back to whichever wrist is visible so the dart always tracks something
+            let fallbackArm: BodySide = preferredArm == .left ? .right : .left
+            wrist = fallbackArm == .left ? keypoints.leftWrist : keypoints.rightWrist
+            if wrist != nil {
+                FlexaLog.game.debug("🎯 [BalloonPop] Falling back to \(fallbackArm == .left ? "left" : "right") wrist for tracking")
+                preferredArm = fallbackArm
             }
+        }
+        
+        guard let trackedWrist = wrist else {
+            leftHandPosition = .zero
+            rightHandPosition = .zero
             return
         }
         
-        // Map wrist position to screen
-    let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
+        activeArm = preferredArm
+        
+        // Map wrist position to screen (same mapping as constellation game)
+        let mapped = CoordinateMapper.mapVisionPointToScreen(
+            trackedWrist,
+            cameraResolution: motionService.cameraResolution,
+            previewSize: screenSize,
+            isPortrait: true,
+            flipY: false
+        )
         
         // Update ONLY the active hand position
         if activeArm == .left {
@@ -268,7 +281,7 @@ struct BalloonPopGameView: View {
     
     private func calculateCurrentElbowAngle(keypoints: SimplifiedPoseKeypoints) -> Double {
         // ✅ CONFIDENCE FILTERING: Only use landmarks with sufficient confidence
-        let confidenceThreshold: Float = 0.5
+        let confidenceThreshold: Float = 0.2
         
         if activeArm == .left {
             // Check all required landmarks have sufficient confidence
@@ -351,17 +364,13 @@ struct BalloonPopGameView: View {
         var poppedBalloons: [UUID] = []
         
         for balloon in balloons {
-            let leftDist = sqrt(pow(balloon.position.x - leftHandPosition.x, 2) + 
-                               pow(balloon.position.y - leftHandPosition.y, 2))
-            let rightDist = sqrt(pow(balloon.position.x - rightHandPosition.x, 2) + 
-                                pow(balloon.position.y - rightHandPosition.y, 2))
+            let activePosition = (activeArm == .left) ? leftHandPosition : rightHandPosition
+            let distance = hypot(balloon.position.x - activePosition.x,
+                                 balloon.position.y - activePosition.y)
             
-            let activeDist = (activeArm == .left) ? leftDist : rightDist
-            let inactiveDist = (activeArm == .left) ? rightDist : leftDist
+            print("🔍 [BalloonPop] Balloon at (\(balloon.position.x), \(balloon.position.y)) - Active wrist distance: \(distance)")
             
-            print("🔍 [BalloonPop] Balloon at (\(balloon.position.x), \(balloon.position.y)) - Left dist: \(leftDist), Right dist: \(rightDist), Active dist: \(activeDist)")
-            
-            if activeDist < balloon.size * 0.6 || inactiveDist < balloon.size * 0.5 {
+            if distance <= balloon.size * 0.75 {
                 poppedBalloons.append(balloon.id)
                 score += 10
                 print("🔍 [BalloonPop] Balloon popped! Score: \(score)")
@@ -425,7 +434,7 @@ struct BalloonPopGameView: View {
         let userInfo = motionService.buildSessionNotificationPayload(from: sessionData)
         NotificationCenter.default.post(name: NSNotification.Name("BalloonPopGameEnded"), object: nil, userInfo: userInfo)
         // Use NavigationCoordinator for consistent routing instead of local fullScreenCover
-        NavigationCoordinator.shared.showAnalyzing(sessionData: sessionData)
+    // Navigation will be handled by the CleanGameHostView via posted notification
     }
     
     private func cleanupGame() {

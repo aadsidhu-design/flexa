@@ -98,23 +98,6 @@ struct FollowCircleGameView: View {
                 
                 // UI Overlay - Only Score
                 VStack {
-                    // Rep progress bar (fills at 17 reps)
-                    GeometryReader { geometry in
-                        let barWidth = geometry.size.width - 40
-                        let progress = min(Double(reps) / 17.0, 1.0)
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .frame(width: barWidth, height: 14)
-                                .foregroundColor(Color.gray.opacity(0.25))
-                            Capsule()
-                                .frame(width: barWidth * progress, height: 14)
-                                .foregroundColor(.green)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                    }
-                    .frame(height: 24)
-
                     // Score at top
                     HStack {
                         Spacer()
@@ -152,19 +135,6 @@ struct FollowCircleGameView: View {
                         .background(Color.black.opacity(0.8))
                         .cornerRadius(20)
                         .transition(.scale.combined(with: .opacity))
-                    }
-                    
-                    Spacer()
-                    
-                    // Recalibration message
-                    if showRecalibrateMessage {
-                        Text("Center Recalibrated!")
-                            .font(.headline)
-                            .foregroundColor(.green)
-                            .padding()
-                            .background(Color.black.opacity(0.7))
-                            .cornerRadius(10)
-                            .transition(.opacity)
                     }
                     
                     Spacer()

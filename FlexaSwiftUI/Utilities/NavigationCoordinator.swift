@@ -145,7 +145,7 @@ class NavigationCoordinator: ObservableObject {
             NotificationCenter.default.post(name: NSNotification.Name("ShowCalibrationWizard"), object: nil)
         }
     }
-    
+
     // Navigate to custom exercise creator
     func showCustomExerciseCreator() {
         performOnMain { [self] in

@@ -187,10 +187,14 @@ struct EnhancedProgressViewFixed: View {
             let comp = findComprehensive(for: session)
             var sparcData = comp?.sparcDataOverTime.map { $0.sparcValue } ?? []
             if sparcData.isEmpty { sparcData = session.sparcHistory }
+            
+            // Safety check: ensure session duration is reasonable
+            let safeDuration = min(max(session.duration, 0), 86400) // Max 24 hours
+            
             return sparcData.enumerated().map { index, sparc in
                 // Calculate time in seconds based on session duration and data points
                 let timeInSeconds =
-                    (Double(index) / Double(max(1, sparcData.count - 1))) * session.duration
+                    (Double(index) / Double(max(1, sparcData.count - 1))) * safeDuration
                 let timestamp = session.timestamp.addingTimeInterval(timeInSeconds)
                 return MetricPoint(date: timestamp, value: sparc)
             }
@@ -342,7 +346,7 @@ struct AppleFitnessChart: View {
         case .rom:
             return paddedMin...max(paddedMax, 180)  // ROM typically 0-180°
         case .sparc:
-            return paddedMin...max(paddedMax, 100)  // SPARC 0-100 scale
+            return 0...100  // Always show full 0-100 scale for accurate smoothness representation
         case .pain:
             return max(-10, paddedMin)...min(10, paddedMax)  // Pain change -10 to +10
         }
@@ -364,16 +368,21 @@ struct AppleFitnessChart: View {
                         color: Color(red: 0.0, green: 0.48, blue: 1.0)
                     )
                 case .sparc:
+                    // Render SPARC (smoothness) as line only (no dots)
                     let idx = indexMap[item.id] ?? 0
                     let timeInSeconds: Double =
                         (idx < xValues.count)
                         ? xValues[idx]
                         : (points.first.map { item.date.timeIntervalSince($0.date) } ?? 0)
-                    AppleFitnessAreaMark(
+                    
+                    // Line connecting points
+                    LineMark(
                         x: .value("Time (s)", timeInSeconds),
-                        y: .value("Smoothness", item.value),
-                        color: Color(red: 1.0, green: 0.58, blue: 0.0)
+                        y: .value("Smoothness", item.value)
                     )
+                    .foregroundStyle(Color(red: 1.0, green: 0.58, blue: 0.0))
+                    .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                    .interpolationMethod(.linear)
                 case .aiScore, .pain:
                     AppleFitnessAreaMark(
                         x: .value("Day", item.date, unit: .day),

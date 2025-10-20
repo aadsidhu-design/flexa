@@ -290,6 +290,28 @@ class CustomRepDetector: ObservableObject {
               exercise.trackingMode == .camera else { return }
         
         let activeSide = keypoints.phoneArm
+        let confidenceThreshold: Float = 0.2
+        
+        // Feed SPARC analyzer with wrist position for smoothness tracking
+        var wrist: CGPoint? = nil
+        if activeSide == .left {
+            if let leftWrist = keypoints.leftWrist, keypoints.leftWristConfidence > confidenceThreshold {
+                wrist = leftWrist
+            } else if let rightWrist = keypoints.rightWrist, keypoints.rightWristConfidence > confidenceThreshold {
+                wrist = rightWrist
+            }
+        } else {
+            if let rightWrist = keypoints.rightWrist, keypoints.rightWristConfidence > confidenceThreshold {
+                wrist = rightWrist
+            } else if let leftWrist = keypoints.leftWrist, keypoints.leftWristConfidence > confidenceThreshold {
+                wrist = leftWrist
+            }
+        }
+        
+        if let wristPoint = wrist {
+            let wristPos = SIMD3<Float>(Float(wristPoint.x), Float(wristPoint.y), 0)
+            SimpleMotionService.shared.sparcService.addCameraMovement(position: wristPos, timestamp: timestamp)
+        }
         
         // Get ROM value based on joint being tracked
         let romValue: Double
@@ -297,11 +319,16 @@ class CustomRepDetector: ObservableObject {
         case .armpit:
             romValue = keypoints.getArmpitROM(side: activeSide)
         case .elbow:
-            // Get elbow angle based on side
-            if activeSide == .left {
-                romValue = keypoints.getLeftElbowAngle() ?? 0
+            // Get elbow angle based on side with confidence check
+            let elbowConfidence = activeSide == .left ? keypoints.leftElbowConfidence : keypoints.rightElbowConfidence
+            if elbowConfidence > confidenceThreshold {
+                if activeSide == .left {
+                    romValue = keypoints.getLeftElbowAngle() ?? 0
+                } else {
+                    romValue = keypoints.getRightElbowAngle() ?? 0
+                }
             } else {
-                romValue = keypoints.getRightElbowAngle() ?? 0
+                romValue = 0
             }
         case .none:
             romValue = keypoints.getArmpitROM(side: activeSide) // Default to armpit

@@ -42,6 +42,11 @@ class MediaPipePoseProvider: NSObject, ObservableObject {
     private var consecutiveFailures: Int = 0
     private let maxConsecutiveFailures = 10
     private var lastSuccessfulDetection: Date?
+
+    /// If true, provider will mirror normalized X coordinates for front camera.
+    /// Set to false when the preview layer already applies horizontal mirroring
+    /// to avoid double-mirroring of detected keypoints.
+    var shouldMirrorNormalizedPointsForFrontCamera: Bool = true
     
     // Model configuration - Using FULL model for maximum accuracy
     private let modelName = "pose_landmarker_full" // Full model for better accuracy vs lite
@@ -356,9 +361,9 @@ class MediaPipePoseProvider: NSObject, ObservableObject {
         
         let originalX = rawX
         
-        // Mirror X for front camera
+        // Mirror X for front camera only when enabled to avoid double mirroring
         var normalizedX = rawX
-        if isFront {
+        if isFront && shouldMirrorNormalizedPointsForFrontCamera {
             normalizedX = 1.0 - normalizedX
         }
 
@@ -390,9 +395,15 @@ class MediaPipePoseProvider: NSObject, ObservableObject {
             return nil
         }
 
-        if rawX < 0.0 || rawX > 1.0 || rawY < 0.0 || rawY > 1.0 {
+        let clampTolerance: CGFloat = 0.35
+        if rawX < -clampTolerance || rawX > 1.0 + clampTolerance || rawY < -clampTolerance || rawY > 1.0 + clampTolerance {
             FlexaLog.vision.debug("⚠️ [LANDMARK-INVALID] \(label) out of bounds RAW(\(String(format: "%.4f", rawX)), \(String(format: "%.4f", rawY))) - marking as unavailable")
             return nil
+        }
+
+        let needsClamp = rawX < 0.0 || rawX > 1.0 || rawY < 0.0 || rawY > 1.0
+        if needsClamp {
+            FlexaLog.vision.debug("⚠️ [LANDMARK-CLAMP] \(label) RAW(\(String(format: "%.4f", rawX)), \(String(format: "%.4f", rawY))) outside normalized range - clamping into bounds")
         }
 
         // Threshold is conservative; callers can still check confidence on the returned keypoint

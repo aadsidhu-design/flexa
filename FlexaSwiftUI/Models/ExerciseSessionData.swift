@@ -135,6 +135,13 @@ struct ROMPoint: Codable {
 struct SPARCPoint: Codable {
     let sparc: Double
     let timestamp: Date
+    let repIndex: Int
+
+    init(sparc: Double, timestamp: Date, repIndex: Int = 0) {
+        self.sparc = sparc
+        self.timestamp = timestamp
+        self.repIndex = repIndex
+    }
 }
 
 struct UserGoals: Codable {

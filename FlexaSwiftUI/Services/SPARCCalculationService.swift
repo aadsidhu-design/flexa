@@ -48,6 +48,7 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     
     // REAL TIME-BASED SPARC DATA for proper graphing
     private let sparcDataPoints = BoundedArray<SPARCDataPoint>(maxSize: 200) // Real timestamps
+    private var currentRepIndex: Int = 0
     private var sessionStartTime: Date = Date() // Track session start for relative timestamps
     
     // Memory management constants - relaxed for better performance
@@ -65,7 +66,7 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     private var lastSPARCUpdateTime: Date = .distantPast
     // Smoothing for published SPARC values (0..1) - lower alpha to track changes faster
     private var sparcSmoothingAlpha: Double = 0.5
-    private var lastSmoothedSPARC: Double = 50.0
+    private var lastSmoothedSPARC: Double = .nan
     // Low-pass filter state for accelerometer magnitude (for handheld smoothing)
     private var accelLPFLast: Float = 0.0
     private let accelLPFAlpha: Float = 0.12 // gentle smoothing for accel magnitude
@@ -189,7 +190,12 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
         lastMemoryCheck = Date()
         lastSPARCUpdateTime = .distantPast
         sessionStartTime = Date() // Reset session start time for accurate graphing
+        currentRepIndex = 0
         FlexaLog.motion.info(" [SPARC] Reset complete - session start time initialized")
+    }
+
+    func markRepBoundary() {
+        currentRepIndex += 1
     }
     
     func getCurrentSPARC() -> Double {
@@ -203,6 +209,12 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     // Get real time-based SPARC data for proper graphing
     func getSPARCDataPoints() -> [SPARCDataPoint] {
         return sparcDataPoints.allElements
+    }
+
+    /// Retrieve SPARC data points optionally filtered by data source (e.g., .arkit for handheld)
+    func getSPARCDataPoints(filteredBy dataSource: SPARCDataSource?) -> [SPARCDataPoint] {
+        guard let ds = dataSource else { return sparcDataPoints.allElements }
+        return sparcDataPoints.allElements.filter { $0.dataSource == ds }
     }
     
     /// Get the session start time for accurate relative timestamp calculations in charts
@@ -482,6 +494,11 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
     }
 
     private func applyPublishingSmoothing(value: Double) -> Double {
+        // If we don't have a previous smoothed value (first publish), return the value directly
+        if lastSmoothedSPARC.isNaN {
+            lastSmoothedSPARC = value
+            return value
+        }
         let smoothed = (sparcSmoothingAlpha * value) + ((1.0 - sparcSmoothingAlpha) * lastSmoothedSPARC)
         lastSmoothedSPARC = smoothed
         return smoothed
@@ -505,13 +522,15 @@ class SPARCCalculationService: ObservableObject, @unchecked Sendable {
         recordSPARCValue(value)
 
         let normalizedConfidence = max(0.0, min(confidence, 1.0))
+        let repIndexValue = dataSource == .vision ? currentRepIndex : 0
         let dataPoint = SPARCDataPoint(
             timestamp: timestamp,
-            sparcValue: value,
+            sparcValue: clamped,
             movementPhase: "steady",
             jointAngles: [:],
             confidence: normalizedConfidence,
-            dataSource: dataSource
+            dataSource: dataSource,
+            repIndex: repIndexValue
         )
         sparcDataPoints.append(dataPoint)
 

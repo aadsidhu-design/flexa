@@ -230,16 +230,6 @@ import Foundation
         - Any assumptions made and why
         - Alternative interpretations considered but rejected
         
-        Example good reasoning: "Selected camera mode because user mentioned 'raise both arms' which requires bilateral tracking. Chose armpit joint as movement is shoulder elevation in frontal plane. Vertical movement type due to straight up-down pattern. Set 45° ROM threshold for moderate rehabilitation intensity. Bidirectional directionality since full lift-and-lower cycle constitutes meaningful therapeutic rep."
-        
-        ## EDGE CASE HANDLING
-        
-        1. **Vague descriptions**: If unclear, favor simpler interpretation (handheld over camera)
-        2. **Multiple interpretations**: Choose most therapeutically sound option
-        3. **Missing context**: Apply standard rehabilitation best practices
-        4. **Unusual exercises**: Use "mixed" movement type and explain in reasoning
-        5. **Contradictory info**: Prioritize biomechanically correct interpretation
-        
         CRITICAL: Respond ONLY with valid JSON. Do not include any explanatory text before or after the JSON object.
         """
     }
@@ -262,12 +252,24 @@ import Foundation
         }
         
         jsonString = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
+        if !jsonString.hasPrefix("{") {
+            if let extracted = extractFirstJSONObject(from: jsonString) {
+                jsonString = extracted
+            }
+        }
+
+        guard jsonString.hasPrefix("{"), jsonString.hasSuffix("}") else {
+            FlexaLog.gemini.error("❌ [AI] Unable to isolate JSON object from response: \(jsonString.prefix(200))…")
+            throw NSError(domain: "AIExerciseAnalyzer", code: -6,
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to parse AI response. Please try again."])
+        }
+
         guard let data = jsonString.data(using: .utf8) else {
             throw NSError(domain: "AIExerciseAnalyzer", code: -1,
                          userInfo: [NSLocalizedDescriptionKey: "Failed to convert response to data"])
         }
-        
+
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         
@@ -298,5 +300,25 @@ import Foundation
             throw NSError(domain: "AIExerciseAnalyzer", code: -5,
                          userInfo: [NSLocalizedDescriptionKey: "Failed to parse AI response. Please try again."])
         }
+    }
+
+    private func extractFirstJSONObject(from text: String) -> String? {
+        guard let start = text.firstIndex(of: "{") else { return nil }
+        var braceDepth = 0
+        var currentIndex = start
+        while currentIndex < text.endIndex {
+            let character = text[currentIndex]
+            if character == "{" {
+                braceDepth += 1
+            } else if character == "}" {
+                braceDepth -= 1
+                if braceDepth == 0 {
+                    let jsonSubstring = text[start...currentIndex]
+                    return String(jsonSubstring)
+                }
+            }
+            currentIndex = text.index(after: currentIndex)
+        }
+        return nil
     }
 }

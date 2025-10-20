@@ -7,6 +7,7 @@ struct CleanGameHostView: View {
     @EnvironmentObject var motionService: SimpleMotionService
     @EnvironmentObject var backendService: BackendService
     @EnvironmentObject var navigationCoordinator: NavigationCoordinator
+    @EnvironmentObject var goalsService: GoalsAndStreaksService
     
     @State private var gameScore: Int = 0
     @State private var repsCompleted: Int = 0
@@ -100,6 +101,10 @@ struct CleanGameHostView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BalloonPopGameEnded"))) { note in
             handleGameEnded(userInfo: note.userInfo, gameType: .balloonPop)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("MakeYourOwnGameEnded"))) { note in
+            FlexaLog.ui.info("📥 [CleanHost] MakeYourOwnGameEnded notification received")
+            handleGameEnded(userInfo: note.userInfo, gameType: .makeYourOwn)
         }
     }
     
@@ -213,6 +218,9 @@ struct CleanGameHostView: View {
         )
 
         self.sessionData = normalizedSession
+        // Update goals/streaks immediately so the goal circle increments after any session
+        goalsService.recordExerciseSession(normalizedSession)
+        goalsService.refreshGoals()
         FlexaLog.ui.info("📦 [CleanHost] SessionData ready — exercise=\(normalizedSession.exerciseType, privacy: .public) duration=\(String(format: "%.1f", normalizedSession.duration), privacy: .public)s reps=\(normalizedSession.reps, privacy: .public)")
         navigationCoordinator.showAnalyzing(sessionData: normalizedSession)
     }

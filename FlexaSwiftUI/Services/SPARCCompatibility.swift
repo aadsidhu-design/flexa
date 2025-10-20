@@ -1,6 +1,10 @@
 import Foundation
 import simd
 
+// NOTE: IMU-based ROM calculation has been deprecated across the codebase.
+// SPARCCompatibility continues to provide helpers for timeline export and
+// SPARC computation, but ROM values should be obtained from HandheldROMCalculator (ARKit).
+
 // Compatibility helpers for older call-sites that expect these methods on SPARCCalculationService
 extension SPARCCalculationService {
     // Export camera trajectory as positions and timestamps (conservative: return empty arrays if none)

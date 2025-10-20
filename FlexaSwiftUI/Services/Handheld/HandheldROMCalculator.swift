@@ -37,13 +37,16 @@ final class HandheldROMCalculator: ObservableObject {
     // MARK: - Private State
     
     private var motionProfile: MotionProfile = .pendulum
+    private var directionChangeDetectionEnabled: Bool = true
     private var armLength: Double { CalibrationDataManager.shared.currentCalibration?.armLength ?? 0.7 }
     private var arkitBaselinePosition: SIMD3<Float>? // Always set to first valid ARKit position
     private var positions: [SIMD3<Float>] = []
     private var timestamps: [TimeInterval] = []
     private var currentRepPositions: [SIMD3<Float>] = []
     private var currentRepTimestamps: [TimeInterval] = []
+    // Arc (pendulum) rep state
     private var currentRepArcLength: Double = 0.0
+    // Circle (circular) rep state
     private var currentCircularRadius: Double = 0.0
     private var currentRepMaxCircularRadius: Double = 0.0
     private var repTrajectories: [HandheldRepTrajectory] = []
@@ -72,16 +75,23 @@ final class HandheldROMCalculator: ObservableObject {
     var onROMUpdated: ((Double) -> Void)?
     var onRepROMRecorded: ((Double) -> Void)?
     var onRepDetected: ((_ repCount: Int, _ timestamp: TimeInterval) -> Void)?
-    
+
     // MARK: - Public API
-    
+
     func startSession(profile: MotionProfile = .pendulum) {
         queue.async { [weak self] in
             guard let self = self else { return }
             self.motionProfile = profile
+            self.directionChangeDetectionEnabled = true
             self.resetLocked()
             self.arkitBaselinePosition = nil // Reset baseline at session start
             FlexaLog.motion.debug("📐 [HandheldROM] Session started: profile=\(String(describing: profile)), arm=\(String(format: "%.2f", self.armLength))m")
+        }
+    }
+
+    func setDirectionChangeDetection(enabled: Bool) {
+        queue.async { [weak self] in
+            self?.directionChangeDetectionEnabled = enabled
         }
     }
 
@@ -101,89 +111,56 @@ final class HandheldROMCalculator: ObservableObject {
         queue.async { [weak self] in
             guard let self = self else { return }
 
-            // Always use first valid ARKit position as baseline
             if self.arkitBaselinePosition == nil {
                 self.arkitBaselinePosition = position
             }
-            guard let baseline = self.arkitBaselinePosition else { return }
 
-            // Compute relative position to baseline (like FollowCircle)
-            let relPosition = position - baseline
-
-            self.positions.append(relPosition)
+            self.positions.append(position)
             self.timestamps.append(timestamp)
-            self.currentRepPositions.append(relPosition)
-            self.currentRepTimestamps.append(timestamp)
 
-            if self.motionProfile == .circular {
-                let currentDouble = SIMD3<Double>(Double(relPosition.x), Double(relPosition.y), Double(relPosition.z))
-                if self.circularMotionCenter == nil {
-                    self.circularMotionCenter = currentDouble
-                    self.circularSampleCount = 1
-                } else if var center = self.circularMotionCenter {
-                    let sampleCount = Double(self.circularSampleCount)
-                    center = (center * sampleCount + currentDouble) / (sampleCount + 1.0)
-                    self.circularMotionCenter = center
-                    self.circularSampleCount += 1
-                    let radius = distance(currentDouble, center)
-                    self.currentCircularRadius = radius
-                    self.currentRepMaxCircularRadius = max(self.currentRepMaxCircularRadius, radius)
-                    self.maxCircularRadius = max(self.maxCircularRadius, radius)
+            switch self.motionProfile {
+            case .pendulum, .freeform:
+                // Arc: accumulate arc length only
+                if let last = self.currentRepPositions.last {
+                    let seg = Double(simd_distance(last, position))
+                    if seg >= self.segmentNoiseThreshold {
+                        self.currentRepPositions.append(position)
+                        self.currentRepTimestamps.append(timestamp)
+                        self.currentRepArcLength += seg
+                    }
+                } else {
+                    self.currentRepPositions.append(position)
+                    self.currentRepTimestamps.append(timestamp)
                 }
-            }
-
-            if self.currentRepPositions.count >= 2 {
-                let lastPos = self.currentRepPositions[self.currentRepPositions.count - 2]
-                let segment = relPosition - lastPos
-                let segmentLength = Double(length(segment))
-                if segmentLength >= self.minSegmentLength {
-                    self.currentRepArcLength += segmentLength
-                }
-            }
-
-            // Direction-change detection for pendulum-like motions
-            if self.motionProfile == .pendulum {
-                // Compute tangent vector (current - previous) / dt
-                if self.currentRepTimestamps.count >= 2 {
-                    let i = self.currentRepTimestamps.count - 1
-                    let dt = max(1e-3, self.currentRepTimestamps[i] - self.currentRepTimestamps[i-1])
-                    let prev = self.currentRepPositions[i-1]
-                    let curr = self.currentRepPositions[i]
-                    let tangent = (curr - prev) / Float(dt)
-                    let tangentMag = Double(length(tangent))
-                    // EMA smoothing
-                    self.smoothedTangentMagnitude = self.smoothedTangentMagnitude * (1.0 - self.directionSmoothing) + tangentMag * self.directionSmoothing
-                    // Determine sign along dominant motion axis (use best projection plane)
-                    let plane = self.findBestProjectionPlane(self.currentRepPositions)
-                    let prev2D = self.projectTo2D(prev, plane: plane)
-                    let curr2D = self.projectTo2D(curr, plane: plane)
-                    let dx = Double(curr2D.x - prev2D.x)
-                    let sign = dx > 0 ? 1 : (dx < 0 ? -1 : 0)
-
-                    if self.lastTangentSign == 0 {
-                        self.lastTangentSign = sign
-                    } else if sign != 0 && sign != self.lastTangentSign {
-                        // Potential direction reversal; confirm magnitude is above hysteresis
-                        if self.smoothedTangentMagnitude >= self.directionHysteresisThreshold {
-                            let now = Date().timeIntervalSince1970
-                            // require some minimal arc since last rep to avoid chatter
-                            if (now - self.lastDirectionChangeTimestamp) > 0.25 && self.currentRepArcLength >= self.minArcLength {
-                                // Found a direction-change rep
-                                self.lastDirectionChangeTimestamp = now
-                                // Complete rep and reset live buffers
-                                self.currentRepArcLength = max(self.currentRepArcLength, self.currentRepArcLength)
-                                self.completeRep(timestamp: now)
-                                // Notify about rep detection on main thread
-                                DispatchQueue.main.async {
-                                    self.onRepDetected?(1, now)
-                                }
-                            }
-                            self.lastTangentSign = sign
+            case .circular:
+                // Circle: accumulate max radius from baseline
+                if let last = self.currentRepPositions.last {
+                    let seg = Double(simd_distance(last, position))
+                    if seg >= self.segmentNoiseThreshold {
+                        self.currentRepPositions.append(position)
+                        self.currentRepTimestamps.append(timestamp)
+                        if let baseline = self.arkitBaselinePosition {
+                            let baselineD = SIMD3<Double>(Double(baseline.x), Double(baseline.y), Double(baseline.z))
+                            let posD = SIMD3<Double>(Double(position.x), Double(position.y), Double(position.z))
+                            let r = Double(simd_distance(baselineD, posD))
+                            self.currentRepMaxCircularRadius = max(self.currentRepMaxCircularRadius, r)
+                            self.maxCircularRadius = max(self.maxCircularRadius, r)
+                            self.currentCircularRadius = self.currentRepMaxCircularRadius
                         }
                     }
+                } else {
+                    self.currentRepPositions.append(position)
+                    self.currentRepTimestamps.append(timestamp)
                 }
             }
-            // ROM is only calculated at rep completion
+
+            // Update live ROM estimate (non-final)
+            let liveROM = self.calculateCurrentROM()
+            DispatchQueue.main.async {
+                self.currentROM = liveROM
+                self.onROMUpdated?(liveROM)
+                if liveROM > self.maxROM { self.maxROM = liveROM }
+            }
         }
     }
     
@@ -215,6 +192,9 @@ final class HandheldROMCalculator: ObservableObject {
             if !self.currentRepPositions.isEmpty {
                 self.repTrajectories.append(HandheldRepTrajectory(positions: self.currentRepPositions, timestamps: self.currentRepTimestamps))
             }
+
+            // Diagnostic logging for ROM calibration debugging
+            FlexaLog.motion.info(#"📐 [HandheldROM] Rep completed: arcLength=\(String(format: "%.4f", arcLength))m, armLength=\(String(format: "%.2f", self.armLength))m, repROM=\(String(format: "%.2f", repROM))°"#)
 
             // ✅ CRITICAL FIX: Reset ALL baseline positions to prevent ROM accumulation
             self.currentRepPositions.removeAll()
@@ -274,47 +254,74 @@ final class HandheldROMCalculator: ObservableObject {
     
     private func calculateCurrentROM() -> Double {
         switch motionProfile {
-        case .circular: return calculateROMFromRadius(currentCircularRadius)
-        case .pendulum, .freeform: 
-            // Real-time ROM from raw 3D arc (no 2D projection yet - that happens at rep end)
-            return calculateROMFromArcLength(currentRepArcLength, projectTo2D: false)
+        case .pendulum, .freeform:
+            // NEW: Real-time angular ROM from accumulated 3D positions
+            guard currentRepPositions.count >= 3 else { return 0.0 }
+            return calculateAngularROMFrom3DPositions(currentRepPositions)
+        case .circular:
+            // Circle: real-time ROM from max radius
+            return calculateROMFromRadius(currentCircularRadius)
         }
     }
     
     private func calculateRepROM() -> Double {
         switch motionProfile {
-        case .circular:
-            return calculateROMFromRadius(currentRepMaxCircularRadius)
         case .pendulum, .freeform:
-            // At rep end: detect best plane from all rep positions using variance, then calculate final ROM
-            guard currentRepPositions.count >= 2 else { return 0.0 }
-            let bestPlane = findBestProjectionPlane(currentRepPositions)
-            let finalArcLength = calculateArcLengthOn2DPlane(currentRepPositions, plane: bestPlane)
-            return calculateROMFromArcLength(finalArcLength, projectTo2D: true, bestPlane: bestPlane)
+            // NEW: Project 3D positions to 2D plane and calculate angular span
+            guard currentRepPositions.count >= 3 else { return 0.0 }
+            return calculateAngularROMFrom3DPositions(currentRepPositions)
+        case .circular:
+            // Circle: at rep end, use max radius
+            return calculateROMFromRadius(currentRepMaxCircularRadius)
         }
     }
     
+    /// Calculate angular ROM from 3D positions by projecting to best 2D plane
+    /// Formula: angle = arc_length / arm_length (in radians, then convert to degrees)
+    private func calculateAngularROMFrom3DPositions(_ positions: [SIMD3<Float>]) -> Double {
+        guard positions.count >= 2 else { return 0.0 }
+        guard armLength > 0 else { return 0.0 }
+        
+    // 1. Find best 2D projection plane for this path
+        let bestPlane = findBestProjectionPlane(positions)
+        
+        // 2. Calculate arc length on the 2D plane
+        let arcLength = calculateArcLengthOn2DPlane(positions, plane: bestPlane)
+        
+    // 3. Calculate angle: arc_length / arm_length (radians) then convert to degrees
+        let angleRadians = arcLength / armLength
+        let angleDegrees = angleRadians * 180.0 / .pi
+        
+        // Clamp to physiologically plausible range
+        let clamped = min(max(angleDegrees, 0.0), 180.0)
+        
+        if angleDegrees != clamped {
+            FlexaLog.motion.warning("⚠️ [HandheldROM] Raw angle \(angleDegrees)° clamped to \(clamped)° (arcLength=\(String(format: "%.3f", arcLength))m, arm=\(String(format: "%.2f", self.armLength))m)")
+        }
+        
+    // Log diagnostic details about the projection and calculation
+    FlexaLog.motion.debug(#"📐 [HandheldROM] calc: plane=\(bestPlane), arcLength=\(String(format: "%.4f", arcLength))m, arm=\(String(format: "%.2f", armLength))m, angleRaw=\(String(format: "%.2f", angleDegrees))°, angleClamped=\(String(format: "%.2f", clamped))°"#)
+
+        return clamped
+    }
+
     private func calculateROMFromArcLength(_ arcLength: Double, projectTo2D: Bool = false, bestPlane: ProjectionPlane = .xy) -> Double {
         guard armLength > 0 else { return 0.0 }
         let angle = (arcLength / armLength) * 180.0 / .pi
-        // Add 3 degree rightward offset
-        let offsetAngle = angle + 3.0
         // Clamp to a physiologically plausible maximum for a single rep
         // Most shoulder abduction ROMs should be <= 180 degrees; protect against runaway values
-        let clamped = min(max(offsetAngle, 0.0), 180.0)
-        if offsetAngle != clamped {
-            FlexaLog.motion.warning("⚠️ [HandheldROM] Raw angle \(offsetAngle)° clamped to \(clamped)° to avoid anomaly (arcLength=\(String(format: "%.3f", arcLength)), arm=\(String(format: "%.2f", self.armLength))m)")
+        let clamped = min(max(angle, 0.0), 180.0)
+        if angle != clamped {
+            FlexaLog.motion.warning("⚠️ [HandheldROM] Raw angle \(angle)° clamped to \(clamped)° to avoid anomaly (arcLength=\(String(format: "%.3f", arcLength)), arm=\(String(format: "%.2f", self.armLength))m)")
         }
         return clamped
     }
-    
+
     private func calculateROMFromRadius(_ radius: Double) -> Double {
     guard armLength > 0 else { return 0.0 }
     let ratio = max(0.0, min(radius / armLength, 1.0))
     let angle = asin(ratio) * 180.0 / .pi
-    // Add 3 degree rightward offset
-    let offsetAngle = angle + 3.0
-    return min(max(offsetAngle, 0.0), 90.0)
+    return min(max(angle, 0.0), 90.0)
     }
 
     /// Calculate arc length on a specific 2D plane
@@ -354,7 +361,7 @@ final class HandheldROMCalculator: ObservableObject {
             }
             return total
         }
-
+        
         // Fallback to axis projection
         let positions2D = positions.map { pos in
             projectTo2D(pos, plane: plane)

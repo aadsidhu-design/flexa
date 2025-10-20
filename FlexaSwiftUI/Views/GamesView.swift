@@ -70,6 +70,45 @@ struct GamesView: View {
                         }
                         .padding(.horizontal)
                     }
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("Your Custom Exercises")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                                .foregroundColor(.white.opacity(0.25))
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(Color.gray.opacity(0.08))
+                                )
+                            
+                            VStack(spacing: 8) {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 32, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .padding(.bottom, 4)
+                                Text("Create your first custom exercise")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                Text("Tap the green + button to build your own routine.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(24)
+                        }
+                        .padding(.horizontal)
+                        .frame(maxWidth: .infinity)
+                    }
                 }
                 
                 // All Games Grid
@@ -89,7 +128,6 @@ struct GamesView: View {
                                 navigationCoordinator.showInstructions(for: game)
                             }
                         }
-                        // Developer diagnostic/test entries removed for production.
                     }
                     .padding(Edge.Set.horizontal)
                 }
@@ -163,6 +201,52 @@ struct ModernGameCard: View {
 }
 
 // DiagnosticCard removed — developer-only diagnostic/test entry. Left intentionally out of production UI.
+
+
+struct TestROMHarnessCard: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.orange.opacity(0.2))
+                        .frame(width: 60, height: 60)
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+                VStack(spacing: 4) {
+                    Text("Test ROM Harness")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                    Text("Manual ROM testing")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                Text("Fruit Slicer arc ROM")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+            }
+            .frame(height: 160)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.orange.opacity(0.15))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.orange.opacity(0.4), lineWidth: 1.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
 
 
 enum GameType: String, CaseIterable, Identifiable {

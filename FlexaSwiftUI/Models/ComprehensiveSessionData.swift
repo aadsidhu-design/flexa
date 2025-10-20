@@ -102,10 +102,10 @@ struct ComprehensiveSessionData: Codable, Identifiable {
         self.streakAtSession = streakAtSession
         
         // Advanced analytics
-        self.exerciseEfficiency = Self.calculateEfficiency(performanceData: performanceData)
-        self.consistencyScore = Self.calculateSimpleConsistency(romData: performanceData.romPerRep)
-        self.fatigueIndex = Self.calculateFatigueIndex(qualityScores: performanceData.movementQualityScores)
-        self.improvementRate = Self.calculateImprovementRate(sessionNumber: sessionNumber, currentPerformance: performanceData)
+        self.exerciseEfficiency = Self.sanitizeMetric(Self.calculateEfficiency(performanceData: performanceData))
+        self.consistencyScore = Self.sanitizeMetric(Self.calculateSimpleConsistency(romData: performanceData.romPerRep))
+        self.fatigueIndex = Self.sanitizeMetric(Self.calculateFatigueIndex(qualityScores: performanceData.movementQualityScores))
+        self.improvementRate = Self.sanitizeMetric(Self.calculateImprovementRate(sessionNumber: sessionNumber, currentPerformance: performanceData))
         if let postSurvey {
             self.painReductionScore = Double(preSurvey.painLevel - postSurvey.painLevel)
         } else {
@@ -128,37 +128,50 @@ struct ComprehensiveSessionData: Codable, Identifiable {
     
     private static func calculateEfficiency(performanceData: ExercisePerformanceData) -> Double {
         guard !performanceData.romPerRep.isEmpty else { return 0 }
+        guard performanceData.duration > 0 else { return 0 }
         let avgROM = performanceData.romPerRep.reduce(0, +) / Double(performanceData.romPerRep.count)
-        let timeEfficiency = Double(performanceData.reps) / (performanceData.duration / 60.0) // reps per minute
-        return (avgROM / 90.0) * min(timeEfficiency / 10.0, 1.0) * 100 // Normalized efficiency score
+        guard avgROM.isFinite else { return 0 }
+        let minutes = performanceData.duration / 60.0
+        guard minutes > 0 else { return 0 }
+        let timeEfficiency = Double(performanceData.reps) / minutes
+        let normalizedTime = min(max(timeEfficiency / 10.0, 0), 1.0)
+        return max(0, (avgROM / 90.0) * normalizedTime * 100)
     }
     
     private static func calculateSimpleConsistency(romData: [Double]) -> Double {
         guard romData.count > 1 else { return 100 }
         let mean = romData.reduce(0, +) / Double(romData.count)
+        guard mean > 0 else { return 0 }
         let variance = romData.map { pow($0 - mean, 2) }.reduce(0, +) / Double(romData.count)
         let standardDeviation = sqrt(variance)
         let coefficientOfVariation = standardDeviation / mean
-        return max(0, 100 - (coefficientOfVariation * 100)) // Higher score = more consistent
+        let score = 100 - (coefficientOfVariation * 100)
+        return max(0, score)
     }
     
     private static func calculateFatigueIndex(qualityScores: [Double]) -> Double {
         guard qualityScores.count > 2 else { return 0 }
         let firstThird = Array(qualityScores.prefix(qualityScores.count / 3))
         let lastThird = Array(qualityScores.suffix(qualityScores.count / 3))
-        
+        guard !firstThird.isEmpty, !lastThird.isEmpty else { return 0 }
         let firstAvg = firstThird.reduce(0, +) / Double(firstThird.count)
+        guard firstAvg > 0 else { return 0 }
         let lastAvg = lastThird.reduce(0, +) / Double(lastThird.count)
-        
-        return max(0, (firstAvg - lastAvg) / firstAvg * 100) // Higher = more fatigue
+        let fatigue = (firstAvg - lastAvg) / firstAvg * 100
+        return max(0, fatigue)
     }
     
     private static func calculateImprovementRate(sessionNumber: Int, currentPerformance: ExercisePerformanceData) -> Double {
-        // This would ideally compare with previous sessions
-        // For now, return a baseline improvement based on performance
+        guard sessionNumber > 0 else { return 0 }
+        guard currentPerformance.aiScore >= 0 else { return 0 }
         let baselineImprovement = Double(currentPerformance.aiScore) / 100.0
-        let sessionFactor = min(Double(sessionNumber) / 10.0, 1.0) // Improvement over sessions
-        return baselineImprovement * sessionFactor * 100
+        let sessionFactor = min(max(Double(sessionNumber) / 10.0, 0), 1.0)
+        return max(0, baselineImprovement * sessionFactor * 100)
+    }
+    
+    private static func sanitizeMetric(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return value
     }
 }
 
@@ -175,6 +188,25 @@ struct SPARCDataPoint: Codable {
     let jointAngles: [String: Double] // Joint name to angle mapping
     let confidence: Double
     let dataSource: SPARCDataSource
+    let repIndex: Int
+
+    init(
+        timestamp: Date,
+        sparcValue: Double,
+        movementPhase: String,
+        jointAngles: [String: Double],
+        confidence: Double,
+        dataSource: SPARCDataSource,
+        repIndex: Int = 0
+    ) {
+        self.timestamp = timestamp
+        self.sparcValue = sparcValue
+        self.movementPhase = movementPhase
+        self.jointAngles = jointAngles
+        self.confidence = confidence
+        self.dataSource = dataSource
+        self.repIndex = repIndex
+    }
 }
 
 struct ExercisePerformanceData {
@@ -222,15 +254,29 @@ struct GoalProgressMetrics: Codable {
     let goalAdjustmentRecommendation: String
     
     init(before: UserGoals, after: UserGoals, sessionData: ExercisePerformanceData) {
-        self.romGoalProgress = min(100, (sessionData.romData.max() ?? 0) / before.targetROM * 100)
-        self.repsGoalProgress = min(100, Double(sessionData.reps) / Double(before.dailyReps) * 100)
+        let targetROM = before.targetROM
+        let bestRepROM = sessionData.romPerRep.max()
+        let legacyMaxROM = sessionData.romData.max()
+        let sessionMaxROM = max(bestRepROM ?? 0, legacyMaxROM ?? 0)
+
+        if targetROM > 0 {
+            self.romGoalProgress = min(100, max(0, sessionMaxROM / targetROM * 100))
+        } else {
+            self.romGoalProgress = 0
+        }
+        let dailyRepTarget = before.dailyReps
+        if dailyRepTarget > 0 {
+            self.repsGoalProgress = min(100, max(0, Double(sessionData.reps) / Double(dailyRepTarget) * 100))
+        } else {
+            self.repsGoalProgress = 0
+        }
         self.consistencyImprovement = 0 // Would calculate based on historical data
         self.painReductionGoal = 0 // Would track pain reduction over time
         
         // Generate goal adjustment recommendation
-        if sessionData.romData.max() ?? 0 > before.targetROM * 0.9 {
+        if targetROM > 0, sessionMaxROM > targetROM * 0.9 {
             self.goalAdjustmentRecommendation = "Consider increasing ROM goal by 10-15 degrees"
-        } else if sessionData.romData.max() ?? 0 < before.targetROM * 0.6 {
+        } else if targetROM > 0, sessionMaxROM < targetROM * 0.6 {
             self.goalAdjustmentRecommendation = "Consider reducing ROM goal to build confidence"
         } else {
             self.goalAdjustmentRecommendation = "Current goals are appropriate"

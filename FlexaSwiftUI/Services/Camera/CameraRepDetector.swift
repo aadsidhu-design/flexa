@@ -280,10 +280,11 @@ final class CameraRepDetector {
         // Can't connect to the same point
         guard from != to else { return false }
         
-        // Can't connect to an already connected point (except for closing triangle)
+        // Can't connect to an already connected point (except for closing shapes)
         if connectedPoints.contains(to) {
-            // Special case: Triangle can close the loop by connecting back to first point
-            if pattern == .triangle && to == connectedPoints.first {
+            // Special case: Allow closing the loop by connecting to the first point
+            // This works for all shapes (triangle, square)
+            if to == connectedPoints.first && connectedPoints.count == totalPoints {
                 return true
             }
             return false
@@ -291,18 +292,16 @@ final class CameraRepDetector {
         
         switch pattern {
         case .triangle:
-            // Triangle: allow any unconnected point
-            // Must close loop at end (handled above)
+            // Triangle: allow connecting any unconnected point (free-form drawing)
             return true
             
         case .rectangle:
             // Rectangle: only allow adjacent connections (no diagonals)
-            let diff = abs(from - to)
-            // Adjacent: diff = 1 (next point) or diff = 3 (opposite side for 4-point rectangle)
-            return diff == 1 || diff == 3
+            let diffRect = abs(from - to)
+            return diffRect == 1 || diffRect == totalPoints - 1
             
         case .circle:
-            // Circle: only allow left/right adjacent connections
+            // Circle: only allow left/right adjacent connections (sequential)
             let diff = abs(from - to)
             // Adjacent: diff = 1 (next point) or diff = totalPoints - 1 (wrap around)
             return diff == 1 || diff == totalPoints - 1
@@ -321,15 +320,13 @@ final class CameraRepDetector {
         totalPoints: Int
     ) -> Bool {
         switch pattern {
-        case .triangle:
-            // Triangle is complete only when all distinct points are connected AND
-            // the final connection closes the loop back to the first point.
-            // This requires totalPoints distinct entries plus the closing entry equal to the first.
-            guard connectedPoints.count >= totalPoints + 1 else { return false }
+        case .triangle, .rectangle:
+            guard totalPoints > 0 else { return false }
+            let uniquePoints = Set(connectedPoints)
+            guard uniquePoints.count >= totalPoints else { return false }
             return connectedPoints.first == connectedPoints.last
-            
-        case .rectangle, .circle:
-            // Rectangle and Circle are complete when all points are connected in order
+
+        case .circle:
             return connectedPoints.count >= totalPoints
         }
     }

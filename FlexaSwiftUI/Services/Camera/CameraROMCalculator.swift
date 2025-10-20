@@ -2,13 +2,14 @@ import CoreGraphics
 
 /// Calculates camera-based range of motion (ROM) metrics from pose keypoints.
 final class CameraROMCalculator {
-    func calculateROM(from keypoints: SimplifiedPoseKeypoints, jointPreference: CameraJointPreference) -> Double {
-        let activeSide = keypoints.phoneArm
+    func calculateROM(from keypoints: SimplifiedPoseKeypoints, jointPreference: CameraJointPreference, flipY: Bool = false) -> Double {
+    let kpts = flippedY(keypoints) // Always flip Y for correct mapping
+    let activeSide = kpts.phoneArm
         FlexaLog.vision.debug("📐 [ROM-CALC] Active arm: \(activeSide == .left ? "LEFT" : "RIGHT"), Joint: \(jointPreference == .elbow ? "ELBOW" : "ARMPIT")")
         
         let (shoulder, elbow, wrist, hip) = activeSide == .left
-            ? (keypoints.leftShoulder, keypoints.leftElbow, keypoints.leftWrist, keypoints.leftHip)
-            : (keypoints.rightShoulder, keypoints.rightElbow, keypoints.rightWrist, keypoints.rightHip)
+            ? (kpts.leftShoulder, kpts.leftElbow, kpts.leftWrist, kpts.leftHip)
+            : (kpts.rightShoulder, kpts.rightElbow, kpts.rightWrist, kpts.rightHip)
 
         if let s = shoulder, let e = elbow {
             FlexaLog.vision.debug("📐 [ROM-CALC] Shoulder: (\(String(format: "%.1f", s.x)), \(String(format: "%.1f", s.y))), Elbow: (\(String(format: "%.1f", e.x)), \(String(format: "%.1f", e.y)))")
@@ -36,7 +37,7 @@ final class CameraROMCalculator {
         }
 
         // Fallback to alternate side if active landmarks unavailable
-        if let leftShoulder = keypoints.leftShoulder, let leftElbow = keypoints.leftElbow {
+    if let leftShoulder = kpts.leftShoulder, let leftElbow = kpts.leftElbow {
             if jointPreference == .elbow, let leftWrist = keypoints.leftWrist {
                 return calculateElbowFlexionAngle(shoulder: leftShoulder, elbow: leftElbow, wrist: leftWrist)
             }
@@ -46,7 +47,7 @@ final class CameraROMCalculator {
             return calculateArmAngle(shoulder: leftShoulder, elbow: leftElbow)
         }
 
-        if let rightShoulder = keypoints.rightShoulder, let rightElbow = keypoints.rightElbow {
+    if let rightShoulder = kpts.rightShoulder, let rightElbow = kpts.rightElbow {
             if jointPreference == .elbow, let rightWrist = keypoints.rightWrist {
                 return calculateElbowFlexionAngle(shoulder: rightShoulder, elbow: rightElbow, wrist: rightWrist)
             }
@@ -57,6 +58,38 @@ final class CameraROMCalculator {
         }
 
         return 0.0
+    }
+
+    private func flippedY(_ kp: SimplifiedPoseKeypoints) -> SimplifiedPoseKeypoints {
+        func flip(_ p: CGPoint?) -> CGPoint? { p.map { CGPoint(x: $0.x, y: 1.0 - $0.y) } }
+
+        return SimplifiedPoseKeypoints(
+            timestamp: kp.timestamp,
+            leftWrist: flip(kp.leftWrist),
+            rightWrist: flip(kp.rightWrist),
+            leftElbow: flip(kp.leftElbow),
+            rightElbow: flip(kp.rightElbow),
+            leftShoulder: flip(kp.leftShoulder),
+            rightShoulder: flip(kp.rightShoulder),
+            nose: flip(kp.nose),
+            neck: flip(kp.neck),
+            leftHip: flip(kp.leftHip),
+            rightHip: flip(kp.rightHip),
+            leftEye: flip(kp.leftEye),
+            rightEye: flip(kp.rightEye),
+            leftShoulder3D: kp.leftShoulder3D,
+            rightShoulder3D: kp.rightShoulder3D,
+            leftElbow3D: kp.leftElbow3D,
+            rightElbow3D: kp.rightElbow3D,
+            leftShoulderConfidence: kp.leftShoulderConfidence,
+            rightShoulderConfidence: kp.rightShoulderConfidence,
+            leftElbowConfidence: kp.leftElbowConfidence,
+            rightElbowConfidence: kp.rightElbowConfidence,
+            leftWristConfidence: kp.leftWristConfidence,
+            rightWristConfidence: kp.rightWristConfidence,
+            noseConfidence: kp.noseConfidence,
+            neckConfidence: kp.neckConfidence
+        )
     }
 
     private func calculateArmAngle(shoulder: CGPoint, elbow: CGPoint) -> Double {

@@ -40,16 +40,13 @@ struct WallClimbersGameView: View {
                 .zIndex(1000)
             }
             
-            // Minimal UI — only altitude meter on the right edge
-            VStack {
+            // Minimal UI — only altitude meter on the right edge, stretching vertically
+            HStack {
                 Spacer()
-                HStack {
-                    Spacer()
-                    VerticalAltitudeMeter(altitude: altitude, maxAltitude: maxAltitude)
-                        .frame(width: 60, height: geometry.size.height * 0.3)
-                        .padding(.trailing, 20)
-                        .padding(.bottom, 50)
-                }
+                VerticalAltitudeMeter(altitude: altitude, maxAltitude: maxAltitude)
+                    .frame(width: 50, height: geometry.size.height * 0.75)  // Stretch from bottom-ish to top-ish
+                    .padding(.trailing, 15)
+                    .padding(.vertical, geometry.size.height * 0.125)  // Equal padding top and bottom for centering
             }
         }
         .onAppear {
@@ -162,20 +159,24 @@ struct WallClimbersGameView: View {
         }
         
         let currentTime = Date().timeIntervalSince1970
+        let confidenceThreshold: Float = 0.2
 
         // Feed SPARC analyzer with the active wrist to capture smoothness without UI artifacts
         let activeSide = keypoints.phoneArm
-        if let activeWrist = (activeSide == .left) ? keypoints.leftWrist : keypoints.rightWrist {
+        let activeWristConfidence = (activeSide == .left) ? keypoints.leftWristConfidence : keypoints.rightWristConfidence
+        
+        if let activeWrist = (activeSide == .left) ? keypoints.leftWrist : keypoints.rightWrist,
+           activeWristConfidence > confidenceThreshold {
             let mapped = CoordinateMapper.mapVisionPointToScreen(activeWrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
             let wristPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
             motionService.sparcService.addCameraMovement(position: wristPos, timestamp: currentTime)
         } else {
             // Fallback to whichever wrist is currently visible to keep data flowing
-            if let left = keypoints.leftWrist {
+            if let left = keypoints.leftWrist, keypoints.leftWristConfidence > confidenceThreshold {
                 let mapped = CoordinateMapper.mapVisionPointToScreen(left, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
                 let leftPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
                 motionService.sparcService.addCameraMovement(position: leftPos, timestamp: currentTime)
-            } else if let right = keypoints.rightWrist {
+            } else if let right = keypoints.rightWrist, keypoints.rightWristConfidence > confidenceThreshold {
                 let mapped = CoordinateMapper.mapVisionPointToScreen(right, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
                 let rightPos = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
                 motionService.sparcService.addCameraMovement(position: rightPos, timestamp: currentTime)
@@ -184,58 +185,82 @@ struct WallClimbersGameView: View {
     }
     
     private func updateClimbing() {
-        guard let keypoints = motionService.poseKeypoints else { 
-                return 
+        guard let keypoints = motionService.poseKeypoints else {
+            return
         }
-        
+
+        let confidenceThreshold: Float = 0.2
         let activeSide = keypoints.phoneArm
-        let activeWrist = (activeSide == .left) ? keypoints.leftWrist : keypoints.rightWrist
+        var trackingSide = activeSide
+        var wristPoint: CGPoint? = nil
         
-        // Use screen-space Y position (pixels) for more accurate distance tracking
-        guard let wrist = activeWrist else { return }
-    let mappedWrist = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: motionService.cameraResolution, previewSize: screenSize, isPortrait: true, flipY: false)
+        // Try preferred side first with confidence check
+        if activeSide == .left {
+            if let left = keypoints.leftWrist, keypoints.leftWristConfidence > confidenceThreshold {
+                wristPoint = left
+            } else if let right = keypoints.rightWrist, keypoints.rightWristConfidence > confidenceThreshold {
+                wristPoint = right
+                trackingSide = .right
+                FlexaLog.game.debug("🧗 [WallClimbers] Falling back to right wrist for altitude tracking")
+            }
+        } else {
+            if let right = keypoints.rightWrist, keypoints.rightWristConfidence > confidenceThreshold {
+                wristPoint = right
+            } else if let left = keypoints.leftWrist, keypoints.leftWristConfidence > confidenceThreshold {
+                wristPoint = left
+                trackingSide = .left
+                FlexaLog.game.debug("🧗 [WallClimbers] Falling back to left wrist for altitude tracking")
+            }
+        }
+
+        guard let wrist = wristPoint else { return }
+
+        let mappedWrist = CoordinateMapper.mapVisionPointToScreen(
+            wrist,
+            cameraResolution: motionService.cameraResolution,
+            previewSize: screenSize,
+            isPortrait: true,
+            flipY: false
+        )
         let currentWristY = CGFloat(mappedWrist.y)
-        
-        // Smooth the position
+
         let alpha: CGFloat = 0.25
         let smoothY = alpha * currentWristY + (1 - alpha) * CGFloat(lastWristY)
-        
-        // Get current ROM
+
         var currentROM = motionService.currentROM
         if currentROM <= 0 {
-            let rawArmpitROM = keypoints.getArmpitROM(side: activeSide)
+            let rawArmpitROM = keypoints.getArmpitROM(side: trackingSide)
             currentROM = motionService.validateAndNormalizeROM(rawArmpitROM)
         }
-        
-        // Process motion through CameraRepDetector
+
         let result = repDetector.processWallClimbersMotion(
             wristY: smoothY,
             rom: currentROM,
             threshold: climbThreshold,
             screenHeight: screenSize.height
         )
-        
-        // Check if rep was detected
+
         if result.repDetected {
             let minimumThreshold = motionService.getMinimumROMThreshold(for: .wallClimbers)
-            
+
             if result.peakROM >= minimumThreshold {
                 motionService.recordCameraRepCompletion(rom: result.peakROM)
                 reps = motionService.currentReps
-                
-                // Update game metrics
-                altitude = min(maxAltitude, altitude + Double(result.distanceTraveled) * 2.5)  // Scale distance to meters
-                score += Int(result.distanceTraveled)
-                
+
+                let baseGain = maxAltitude / 20.0
+                let romBoost = min(1.5, max(0.5, result.peakROM / max(minimumThreshold, 1)))
+                let altitudeGain = baseGain * romBoost
+                altitude = min(maxAltitude, altitude + altitudeGain)
+                score += Int(altitudeGain / (maxAltitude / 100.0))
+
                 FlexaLog.game.info("🧗 [WallClimbers] ✅ Rep #\(reps) completed! ROM: \(String(format: "%.1f", result.peakROM))°, Distance: \(String(format: "%.0f", result.distanceTraveled))px, Altitude: \(Int(altitude))m")
-                
-                // Haptic feedback
+
                 HapticFeedbackService.shared.successHaptic()
             } else {
                 FlexaLog.game.debug("🧗 [WallClimbers] ⚠️ Rep ROM too low: \(String(format: "%.1f", result.peakROM))° < \(String(format: "%.1f", minimumThreshold))°")
             }
         }
-        
+
         lastWristY = Double(smoothY)
     }
     
@@ -262,7 +287,7 @@ struct WallClimbersGameView: View {
         self.sessionData = sessionData
         let userInfo = motionService.buildSessionNotificationPayload(from: sessionData)
         NotificationCenter.default.post(name: NSNotification.Name("MountainGameEnded"), object: nil, userInfo: userInfo)
-        NavigationCoordinator.shared.showAnalyzing(sessionData: sessionData)
+    // Navigation triggered via CleanGameHostView observer for the posted notification
     }
     
     private func cleanupGame() {
@@ -278,20 +303,8 @@ struct VerticalAltitudeMeter: View {
     var body: some View {
         let progress = min(altitude / maxAltitude, 1.0)
         
-        VStack(spacing: 8) {
-            // Current altitude display
-            Text("\(Int(altitude))m")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.blue.opacity(0.8))
-                )
-            
-            // Meter bar - taller and more prominent
+        GeometryReader { geometry in
+            // Meter bar - stretches full height with no text
             ZStack(alignment: .bottom) {
                 // Background with gradient border
                 RoundedRectangle(cornerRadius: 8)
@@ -300,7 +313,6 @@ struct VerticalAltitudeMeter: View {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color.black.opacity(0.4))
                     )
-                    .frame(width: 40, height: 250)
                 
                 // Progress with smooth gradient
                 RoundedRectangle(cornerRadius: 6)
@@ -316,28 +328,16 @@ struct VerticalAltitudeMeter: View {
                             endPoint: .top
                         )
                     )
-                    .frame(width: 36, height: max(4, progress * 246))
+                    .frame(height: max(4, progress * (geometry.size.height - 4)))
                     .animation(.easeInOut(duration: 0.3), value: progress)
+                    .padding(2)
             }
-            
-            // Goal display
-            Text("Goal: \(Int(maxAltitude))m")
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.white.opacity(0.9))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.gray.opacity(0.6))
-                )
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.black.opacity(0.6))
+                    .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 2)
+            )
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.black.opacity(0.7))
-                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
-        )
     }
 }
 

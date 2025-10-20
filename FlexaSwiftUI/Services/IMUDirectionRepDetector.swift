@@ -10,6 +10,10 @@ import Foundation
 import CoreMotion
 
 /// Simple rep detector: integrate 3D acceleration (gravity removed) to get velocity, detect sign changes
+///
+/// DEPRECATION NOTE: This class is a rep detector only. IMU-derived ROM is deprecated across the
+/// system — ROM values are now computed exclusively via ARKit in `HandheldROMCalculator`.
+/// Keep this detector for low-latency rep detection and diagnostics only.
 class IMUDirectionRepDetector {
 
     /// Allow callers to silence high-frequency IMU debug traces while keeping

@@ -146,7 +146,6 @@ class ConstellationGame: ObservableObject {
     private var incorrectFeedbackToken: UUID?
     private var lastDetectedPointIndex: Int?
     private var lastDetectionTimestamp: TimeInterval = 0
-    private var previousPosition: CGPoint = .zero
     var screenSize: CGSize = .zero  // Changed to internal for GeometryReader access
     private var repDetector: CameraRepDetector = CameraRepDetector(minimumInterval: 0.3)
 
@@ -203,39 +202,51 @@ class ConstellationGame: ObservableObject {
             FlexaLog.game.info("📍 [Constellation] Screen size initialized: \(self.screenSize.width)x\(self.screenSize.height)")
         }
         
-        // Prefer the wrist on the phone-side (phoneArm), fall back to any visible wrist
-        if let keypoints = motionService.poseKeypoints {
-            let preferredSide = keypoints.phoneArm
-            let wristPoint = preferredSide == .left ? keypoints.leftWrist : keypoints.rightWrist
-            var wrist = wristPoint
-            // Fallback: if preferred side not visible, try the other side
-            if wrist == nil {
-                wrist = preferredSide == .left ? keypoints.rightWrist : keypoints.leftWrist
-            }
-            if let wrist = wrist {
-            let cameraRes = motionService.cameraResolution
-            FlexaLog.game.debug("📍 [Constellation] Raw wrist: (\(String(format: "%.4f", wrist.x)), \(String(format: "%.4f", wrist.y))) | Camera: \(cameraRes.width)x\(cameraRes.height) | Screen: \(self.screenSize.width)x\(self.screenSize.height)")
-            
-            // Map vision point to screen; no vertical flip required (MediaPipe provides top-left origin)
-            let mapped = CoordinateMapper.mapVisionPointToScreen(wrist, cameraResolution: cameraRes, previewSize: screenSize, isPortrait: true, flipY: false)
-            FlexaLog.game.debug("📍 [Constellation] Mapped wrist: (\(String(format: "%.1f", mapped.x)), \(String(format: "%.1f", mapped.y)))")
-            
-            let alpha: CGFloat = 0.8
-            handPosition = CGPoint(
-                x: previousPosition == .zero ? mapped.x : (previousPosition.x * (1 - alpha) + mapped.x * alpha),
-                y: previousPosition == .zero ? mapped.y : (previousPosition.y * (1 - alpha) + mapped.y * alpha)
-            )
-            previousPosition = handPosition
-            
-            FlexaLog.game.debug("📍 [Constellation] Final hand position: (\(String(format: "%.1f", self.handPosition.x)), \(String(format: "%.1f", self.handPosition.y)))")
-            } else {
-                FlexaLog.game.debug("📍 [Constellation] No wrist detected in pose keypoints")
-                handPosition = .zero
-            }
-        } else {
+        guard let keypoints = motionService.poseKeypoints else {
             FlexaLog.game.debug("📍 [Constellation] No pose keypoints available")
             handPosition = .zero
+            return
         }
+
+        let preferredSide = keypoints.phoneArm
+        let confidenceThreshold: Float = 0.2
+        
+        var wrist: CGPoint?
+        var wristConfidence: Float = 0
+        
+        // Try preferred side first
+        if preferredSide == .left {
+            if let leftWrist = keypoints.leftWrist, keypoints.leftWristConfidence > confidenceThreshold {
+                wrist = leftWrist
+                wristConfidence = keypoints.leftWristConfidence
+            } else if let rightWrist = keypoints.rightWrist, keypoints.rightWristConfidence > confidenceThreshold {
+                wrist = rightWrist
+                wristConfidence = keypoints.rightWristConfidence
+            }
+        } else {
+            if let rightWrist = keypoints.rightWrist, keypoints.rightWristConfidence > confidenceThreshold {
+                wrist = rightWrist
+                wristConfidence = keypoints.rightWristConfidence
+            } else if let leftWrist = keypoints.leftWrist, keypoints.leftWristConfidence > confidenceThreshold {
+                wrist = leftWrist
+                wristConfidence = keypoints.leftWristConfidence
+            }
+        }
+
+        guard let wristPoint = wrist else {
+            FlexaLog.game.debug("📍 [Constellation] No wrist detected above confidence threshold")
+            handPosition = .zero
+            return
+        }
+
+        let cameraRes = motionService.cameraResolution
+        let mapped = CoordinateMapper.mapVisionPointToScreen(wristPoint, cameraResolution: cameraRes, previewSize: screenSize, isPortrait: true, flipY: false)
+        
+        // Direct position update - no caching for responsive tracking
+        handPosition = mapped
+
+        let wristVector = SIMD3<Float>(Float(mapped.x), Float(mapped.y), 0)
+        motionService.sparcService.addCameraMovement(position: wristVector, timestamp: Date().timeIntervalSince1970)
     }
 
     func evaluateTargetHit() {
@@ -264,34 +275,50 @@ class ConstellationGame: ObservableObject {
         }
 
         if let startIdx = activeLineStartIndex,
-           connectedPoints.contains(startIdx),
-           !connectedPoints.contains(index) {
+           connectedPoints.contains(startIdx) {
 
-            if let lastIndex = lastDetectedPointIndex,
-               lastIndex == index,
-               now - lastDetectionTimestamp < 0.35 {
+            // Check if we're trying to close the loop (all vertices visited, touching first point)
+            if connectedPoints.count == currentPattern.count && index == connectedPoints.first {
+                if let lastIndex = lastDetectedPointIndex,
+                   lastIndex == index,
+                   now - lastDetectionTimestamp < 0.35 {
+                    return
+                }
+                
+                lastDetectedPointIndex = index
+                lastDetectionTimestamp = now
+                
+                // Close the loop
+                activeLineEndIndex = index
+                handleCorrectHit(for: index, closingLoop: true)
                 return
             }
+            
+            // Regular connection to a new unconnected point
+            if !connectedPoints.contains(index) {
+                if let lastIndex = lastDetectedPointIndex,
+                   lastIndex == index,
+                   now - lastDetectionTimestamp < 0.35 {
+                    return
+                }
 
-            lastDetectedPointIndex = index
-            lastDetectionTimestamp = now
+                lastDetectedPointIndex = index
+                lastDetectionTimestamp = now
 
-            activeLineEndIndex = index
-            handleCorrectHit(for: index)
-            activeLineStartIndex = index
-            activeLineEndIndex = nil
-        } else if connectedPoints.count == currentPattern.count - 1 && index == connectedPoints.first {
-            // Closing the loop for triangle
-            handleCorrectHit(for: index)
+                activeLineEndIndex = index
+                handleCorrectHit(for: index)
+                activeLineStartIndex = index
+                activeLineEndIndex = nil
+            }
         }
     }
 
-    func handleCorrectHit(for index: Int) {
+    func handleCorrectHit(for index: Int, closingLoop: Bool = false) {
+        let pattern = getConstellationPattern()
+        
         // Validate connection using CameraRepDetector
         if !connectedPoints.isEmpty {
             let lastConnected = connectedPoints.last!
-            let pattern = getConstellationPattern()
-            
             let isValid = repDetector.validateConstellationConnection(
                 from: lastConnected,
                 to: index,
@@ -308,9 +335,7 @@ class ConstellationGame: ObservableObject {
                 FlexaLog.game.warning("🚫 [Constellation] Invalid connection: from=\(lastConnected) to=\(index) pattern=\(self.currentPatternName)")
                 
                 // Reset progress for this constellation
-                connectedPoints.removeAll()
-                activeLineStartIndex = nil
-                activeLineEndIndex = nil
+                resetCurrentPattern()
                 return
             }
         }
@@ -319,28 +344,25 @@ class ConstellationGame: ObservableObject {
         clearIncorrectFeedback()
         HapticFeedbackService.shared.successHaptic()
 
-        if !connectedPoints.contains(index) {
+        let alreadyConnected = connectedPoints.contains(index)
+        var addedNewPoint = false
+        
+        if !alreadyConnected {
             connectedPoints.append(index)
-            
-            if connectedPoints.count > 1 {
-                if let motionService = motionService, let keypoints = motionService.poseKeypoints {
-                    var normalized = motionService.currentROM
-                    if normalized <= 0 {
-                        let rawROM = keypoints.getArmpitROM(side: keypoints.phoneArm)
-                        normalized = motionService.validateAndNormalizeROM(rawROM)
-                    }
-                    let minimumThreshold = motionService.getMinimumROMThreshold(for: .constellation)
-                    if normalized >= minimumThreshold {
-                            motionService.recordCameraRepCompletion(rom: normalized)
-                    }
-                }
-            }
-            
+            addedNewPoint = true
+        } else if closingLoop,
+                  let first = connectedPoints.first,
+                  first == index,
+                  connectedPoints.last != index {
+            FlexaLog.game.debug("🎯 [Constellation] Closing loop by returning to start point")
+            connectedPoints.append(index)
+        }
+        
+        if addedNewPoint {
             score += 10
         }
 
         // Check if pattern is complete using CameraRepDetector
-        let pattern = getConstellationPattern()
         let isComplete = repDetector.isConstellationComplete(
             pattern: pattern,
             connectedPoints: connectedPoints,
@@ -348,7 +370,22 @@ class ConstellationGame: ObservableObject {
         )
         
         if isComplete {
-            FlexaLog.game.info("✅ [Constellation] \(self.currentPatternName) pattern completed")
+            FlexaLog.game.info("✅ [Constellation] \(self.currentPatternName) pattern completed - loop closed!")
+            
+            // Record ROM completion for this pattern
+            if let motionService = motionService, let keypoints = motionService.poseKeypoints {
+                var normalized = motionService.currentROM
+                if normalized <= 0 {
+                    let rawROM = keypoints.getArmpitROM(side: keypoints.phoneArm)
+                    normalized = motionService.validateAndNormalizeROM(rawROM)
+                }
+                let minimumThreshold = motionService.getMinimumROMThreshold(for: .constellation)
+                if normalized >= minimumThreshold {
+                    motionService.recordCameraRepCompletion(rom: normalized)
+                    FlexaLog.game.info("📊 [Constellation] Pattern ROM recorded: \(String(format: "%.1f", normalized))°")
+                }
+            }
+            
             onPatternCompleted()
         }
     }
@@ -412,6 +449,8 @@ class ConstellationGame: ObservableObject {
         completedPatterns += 1
         score += 100
         
+        FlexaLog.game.info("🎯 [Constellation] Pattern \(self.completedPatterns) completed! Moving to next pattern...")
+        
         if let motionService = motionService, let keypoints = motionService.poseKeypoints {
             var normalized = motionService.currentROM
             if normalized <= 0 {
@@ -424,12 +463,19 @@ class ConstellationGame: ObservableObject {
             }
         }
         
+        HapticFeedbackService.shared.successHaptic()
+        
         if completedPatterns >= 3 {
+            FlexaLog.game.info("🎯 [Constellation] All 3 patterns completed! Ending game...")
             endGame()
             return
         }
         
-        generateNewPattern()
+        // Brief delay before showing next pattern for visual feedback
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.generateNewPattern()
+            FlexaLog.game.info("🎯 [Constellation] New pattern generated: \(self?.currentPatternName ?? "unknown")")
+        }
     }
     
     func generateNewPattern() {
@@ -501,18 +547,32 @@ class ConstellationGame: ObservableObject {
             sessionData.sparcHistory = motionService.sparcHistoryArray.filter { $0.isFinite }
         }
 
-        motionService.stopSession()
-        let userInfo = motionService.buildSessionNotificationPayload(from: sessionData)
-        NotificationCenter.default.post(name: NSNotification.Name("ConstellationGameEnded"), object: nil, userInfo: userInfo)
-
-        NavigationCoordinator.shared.showAnalyzing(sessionData: sessionData)
+    // Ensure session and camera are stopped and fully torn down before posting game end
+    motionService.stopSession()
+    motionService.stopCamera(tearDownCompletely: true)
+    let userInfo = motionService.buildSessionNotificationPayload(from: sessionData)
+    NotificationCenter.default.post(name: NSNotification.Name("ConstellationGameEnded"), object: nil, userInfo: userInfo)
     }
 
+    func resetCurrentPattern() {
+        FlexaLog.game.info("🔄 [Constellation] Resetting current pattern due to invalid connection")
+        connectedPoints.removeAll()
+        activeLineStartIndex = nil
+        activeLineEndIndex = nil
+        lastDetectedPointIndex = nil
+        lastDetectionTimestamp = 0
+        wrongConnectionCount = 0
+    }
+    
     func cleanup() {
         isGameActive = false
-        motionService?.stopSession()
         gameTimer?.invalidate()
         gameTimer = nil
+        
+        // Explicitly stop camera and session
+        motionService?.stopSession()
+        motionService?.stopCamera(tearDownCompletely: true)
+        
         incorrectFeedbackToken = nil
         showIncorrectFeedback = false
         wrongConnectionCount = 0
@@ -526,5 +586,7 @@ class ConstellationGame: ObservableObject {
         
         completedPatterns = 0
         currentPatternName = "Triangle"
+        
+        FlexaLog.game.info("🧹 [Constellation] Cleanup complete - camera and session stopped")
     }
 }

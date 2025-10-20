@@ -1,3 +1,163 @@
+// MARK: - Gyro-based Rep Detection (low-latency) for Fruit Slicer & Fan the Flame
+// Note: ROM values are now canonical from ARKit via HandheldROMCalculator. The gyro
+// state machine provides low-latency rep detection and acts as a fallback for ROM
+// when ARKit tracking is unavailable.
+
+private enum SwingDirection {
+    case forward, backward, none
+}
+
+private final class GyroRepROMStateMachine {
+    enum Axis: CustomStringConvertible {
+        case x, y, z, auto
+        var description: String {
+            switch self {
+            case .x: return "x"
+            case .y: return "y"
+            case .z: return "z"
+            case .auto: return "auto"
+            }
+        }
+    }
+    private let axis: Axis
+    private var smoothedRateX: Double = 0.0
+    private var smoothedRateY: Double = 0.0
+    private var smoothedRateZ: Double = 0.0
+    private let axisSmoothingFactor: Double = 0.15
+    // Callback to notify when auto-selected axis changes
+    var onAxisChange: ((Axis) -> Void)?
+    private var lastChosenAxis: Axis? = nil
+
+    init(axis: Axis = .x) {
+        self.axis = axis
+    }
+    // Thresholds
+    private let minAngularVelocityThreshold: Double = 0.7 // rad/s
+    private let peakDecayThreshold: Double = 0.25 // rad/s
+    private let smoothingAlpha: Double = 0.35
+    private let angularVelocityWindowSize: Int = 5
+
+    // State
+    private var angularVelocityBuffer: [Double] = []
+    private var smoothedAngularVelocity: Double = 0.0
+    private var lastDirection: SwingDirection = .none
+    private var currentSwingMaxPitch: Double = -Double.greatestFiniteMagnitude
+    private var currentSwingMinPitch: Double = Double.greatestFiniteMagnitude
+    private var inSwing: Bool = false
+    private var lastRepTimestamp: TimeInterval = 0
+    private let repCooldown: TimeInterval = 0.3
+
+    // Output: only notify rep completion timestamp. IMU ROM is no longer emitted.
+    var onRepDetected: ((TimeInterval) -> Void)? // (timestamp)
+
+    // Call this for each new device motion sample
+    func processDeviceMotion(_ motion: CMDeviceMotion, timestamp: TimeInterval) {
+        // Raw rates for all axes
+        let rx = motion.rotationRate.x
+        let ry = motion.rotationRate.y
+        let rz = motion.rotationRate.z
+
+        // Update smoothed per-axis magnitude estimates
+        smoothedRateX = axisSmoothingFactor * abs(rx) + (1 - axisSmoothingFactor) * smoothedRateX
+        smoothedRateY = axisSmoothingFactor * abs(ry) + (1 - axisSmoothingFactor) * smoothedRateY
+        smoothedRateZ = axisSmoothingFactor * abs(rz) + (1 - axisSmoothingFactor) * smoothedRateZ
+
+        // Select axis (dynamic if .auto)
+    let chosenAxis: Axis
+        if axis == .auto {
+            // pick axis with highest smoothed magnitude
+            let m = max(smoothedRateX, max(smoothedRateY, smoothedRateZ))
+            if m == smoothedRateX {
+                chosenAxis = .x
+            } else if m == smoothedRateY {
+                chosenAxis = .y
+            } else {
+                chosenAxis = .z
+            }
+        } else {
+            chosenAxis = axis
+        }
+
+        // Notify if in auto mode and chosen axis changes
+        if axis == .auto {
+            if lastChosenAxis != chosenAxis {
+                lastChosenAxis = chosenAxis
+                onAxisChange?(chosenAxis)
+            }
+        }
+
+        // Select attitude and rotation axis based on chosen axis
+        let angle: Double
+        let rate: Double
+        switch chosenAxis {
+        case .x:
+            angle = motion.attitude.pitch
+            rate = rx
+        case .y:
+            angle = motion.attitude.roll
+            rate = ry
+        case .z:
+            angle = motion.attitude.yaw
+            rate = rz
+        case .auto:
+            // won't happen due to chosenAxis mapping
+            angle = motion.attitude.pitch
+            rate = rx
+        }
+
+        // Smoothing
+        if angularVelocityBuffer.count >= angularVelocityWindowSize {
+            angularVelocityBuffer.removeFirst()
+        }
+    angularVelocityBuffer.append(rate)
+        let avgAngularVelocity = angularVelocityBuffer.reduce(0, +) / Double(angularVelocityBuffer.count)
+        smoothedAngularVelocity = smoothingAlpha * avgAngularVelocity + (1 - smoothingAlpha) * smoothedAngularVelocity
+
+        // Direction detection
+        let direction: SwingDirection
+        if smoothedAngularVelocity > minAngularVelocityThreshold {
+            direction = .forward
+        } else if smoothedAngularVelocity < -minAngularVelocityThreshold {
+            direction = .backward
+        } else {
+            direction = .none
+        }
+
+        // Peak detection state machine
+        if direction != .none {
+            if !inSwing || direction != lastDirection {
+                // New swing started
+                inSwing = true
+                currentSwingMaxPitch = angle
+                currentSwingMinPitch = angle
+            } else {
+                // Update swing extremes
+                currentSwingMaxPitch = max(currentSwingMaxPitch, angle)
+                currentSwingMinPitch = min(currentSwingMinPitch, angle)
+            }
+        } else if inSwing {
+            // End of swing, check for rep
+            let peakVelocity = abs(smoothedAngularVelocity)
+                    if peakVelocity < peakDecayThreshold {
+                let now = timestamp
+                if now - lastRepTimestamp > repCooldown {
+                    let repROM = abs(currentSwingMaxPitch - currentSwingMinPitch) * 180.0 / .pi // convert to degrees
+                    if repROM > 2.0 { // ignore tiny swings
+                        // Notify that a rep occurred; do NOT emit IMU ROM (deprecated)
+                        onRepDetected?(now)
+                    }
+                    lastRepTimestamp = now
+                }
+                inSwing = false
+                currentSwingMaxPitch = -Double.greatestFiniteMagnitude
+                currentSwingMinPitch = Double.greatestFiniteMagnitude
+            }
+        }
+        lastDirection = direction
+    }
+}
+
+    
 import Foundation
 import CoreMotion
 import Combine
@@ -54,6 +214,9 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     @Published private(set) var fastMovementReason: String = SimpleMotionService.defaultFastMovementReason
     @Published var cameraResolution: CGSize = .zero
     @Published private(set) var isARKitTrackingNormal: Bool = false
+
+    // Gyro-based rep/ROM state machine for Fruit Slicer & Fan the Flame
+    private var gyroRepROMStateMachine: GyroRepROMStateMachine? = nil
 
     func getFullSessionData(
         overrideExerciseType: String? = nil,
@@ -226,19 +389,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         }
     }
     
-    /// ⚠️ DEPRECATED - Do not use
-    /// Games should NOT call this - data is handled automatically by rep detectors
-    @available(*, deprecated, message: "ROM tracking is now automatic. Do not call this method.")
-    func addRomPerRep(_ value: Double) {
-        FlexaLog.motion.warning("[DEPRECATED] addRomPerRep called - this method does nothing")
-    }
-    
-    /// ⚠️ DEPRECATED - Do not use
-    /// Games should NOT call this - data is handled automatically by SPARC service
-    @available(*, deprecated, message: "SPARC tracking is now automatic. Do not call this method.")
-    func addSparcHistory(_ value: Double) {
-        FlexaLog.motion.warning("[DEPRECATED] addSparcHistory called - this method does nothing")
-    }
+
+
     
     /// Signal ROM calculator to complete current rep and reset for next rep
     /// Called when a game detects a rep (e.g., Fruit Slicer direction change)
@@ -254,6 +406,15 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         // Reset ROM for next rep
         handheldROMCalculator.resetLiveROM()
         FlexaLog.motion.info("🔄 [Motion] ROM reset for next rep")
+    }
+    
+    func beginManualHandheldRep() {
+        if detailedLoggingEnabled {
+            FlexaLog.motion.info("🆕 [Motion] Manual handheld rep start requested")
+        }
+        handheldROMCalculator.resetLiveROM()
+        repPeakROM = 0
+        romSamples.removeAll()
     }
     
     /// Get the ARKit-based ROM of the most recently completed rep (NOT IMU-based)
@@ -400,6 +561,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     }
     private let handheldRepDetector = HandheldRepDetector()
     private var isHandheldRepDetectorActive = false
+    /// Timestamp of the last rep event coming from the canonical HandheldRepDetector
+    private var lastHandheldDetectorRepTimestamp: TimeInterval = 0
     private let handheldROMCalculator = HandheldROMCalculator()
     // IMU-based rep detector removed; HandheldRepDetector is the single source of truth for handheld games
     // Gyro bias calibration for IMU path (helps remove orientation/drift baseline)
@@ -812,27 +975,24 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                 DispatchQueue.main.async {
                     self.currentReps = reps
                 }
-    
+
+                // Record timestamp of canonical detector rep to suppress duplicates
+                self.lastHandheldDetectorRepTimestamp = timestamp
+
                 // Complete rep in ROM calculator - Always process for ROM calculation
-                if self.detailedLoggingEnabled {
-                    FlexaLog.motion.info("🔔 [HandheldRep] Rep detected #\(reps) at t=\(String(format: "%.3f", timestamp))")
-                }
-                // Complete rep first so ROM calculation has full trajectory data
                 self.handheldROMCalculator.completeRep(timestamp: timestamp)
+                // Get ROM value for this rep
+                let repROM = self.handheldROMCalculator.getLastRepROM()
+                // Only log concise rep detection with ROM value
+                FlexaLog.motion.info("🌀 [GyroRep] Rep #\(reps) detected — ROM=\(String(format: "%.1f", repROM))°")
+
                 // Reset live ROM for the next rep after calculation finishes
-                if self.detailedLoggingEnabled { FlexaLog.motion.debug("📐 [HandheldRep] Resetting live ROM after completeRep()") }
                 self.handheldROMCalculator.resetLiveROM()
-    
+
                 // Haptic feedback
                 if self.currentGameType != .fruitSlicer {
                     HapticFeedbackService.shared.successHaptic()
                 }
-    
-                // SPARC is recorded continuously by SPARCCalculationService.
-                // Do not snapshot per-rep SPARC here; use the continuous timeline
-                let repSparc = self.sparcService.getCurrentSPARC()
-                FlexaLog.motion.debug("🔁 [HandheldRep] Rep #\(reps) completed — current SPARC=\(String(format: "%.3f", repSparc))")
-                FlexaLog.motion.debug("🔁 [HandheldRep] Rep #\(reps) completed — SPARC recorded=\(String(format: "%.3f", repSparc))")
             }
     
             handheldRepDetector.romProvider = { [weak self] in
@@ -920,6 +1080,17 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                 if self.isHandheldRepDetectorActive {
                     if self.detailedLoggingEnabled {
                         FlexaLog.motion.debug("⚠️ [HandheldROM] Ignoring direction-change rep from ROM calculator because HandheldRepDetector is active")
+                    }
+                    return
+                }
+
+                // Additional safeguard: if a rep has just been reported by the
+                // HandheldRepDetector (within suppression window), ignore this ROM
+                // calculator event as it may be a duplicate notification.
+                let suppressionWindow: TimeInterval = 0.5
+                if (timestamp - self.lastHandheldDetectorRepTimestamp) < suppressionWindow {
+                    if self.detailedLoggingEnabled {
+                        FlexaLog.motion.debug("⚠️ [HandheldROM] Suppressing ROM calculator rep (within \(suppressionWindow)s of detector-rep)")
                     }
                     return
                 }
@@ -1177,6 +1348,43 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     
     // Game session control
     func startSession(gameType: GameType) {
+        // If Fruit Slicer or Fan the Flame, set up gyro-based rep/ROM
+        if gameType == .fruitSlicer || gameType == .fanOutFlame || gameType == .makeYourOwn {
+            // Use auto axis selection for Fan the Flame and custom games
+            gyroRepROMStateMachine = GyroRepROMStateMachine(axis: (gameType == .fruitSlicer) ? .x : .auto)
+            gyroRepROMStateMachine?.onAxisChange = { newAxis in
+                FlexaLog.motion.info("🔀 [GyroRep] Auto axis switched to: \(newAxis)")
+            }
+            gyroRepROMStateMachine?.onRepDetected = { [weak self] timestamp in
+                guard let self = self else { return }
+
+                // Update rep count immediately for low-latency UI feedback
+                DispatchQueue.main.async {
+                    self.currentReps += 1
+                    if self.detailedLoggingEnabled {
+                        FlexaLog.motion.info("🌀 [GyroRep] Rep #\(self.currentReps) detected (IMU ROM deprecated)")
+                    }
+                }
+
+                // Always schedule ARKit-based ROM calculation for every rep.
+                // No IMU fallback: ARKit/HandheldROMCalculator is the only ROM source.
+                // Reduce delay to minimize extra arc-length accumulation between
+                // gyro detection and ARKit-based ROM completion. 0.05s gives ARKit
+                // a short window to capture aligned frames while avoiding bias.
+                let arkitDelay: TimeInterval = 0.02
+                DispatchQueue.main.asyncAfter(deadline: .now() + arkitDelay) { [weak self] in
+                    guard let self = self else { return }
+                    if self.detailedLoggingEnabled {
+                        FlexaLog.motion.debug("🕒 [GyroRep] Triggering ARKit-based completeRep() for rep at t=\(String(format: "%.3f", timestamp))")
+                    }
+                    self.handheldROMCalculator.completeRep(timestamp: timestamp)
+                    self.handheldROMCalculator.resetLiveROM()
+                }
+            }
+        } else {
+            gyroRepROMStateMachine = nil
+        }
+        // Note: gyro-based device motion processing is handled in processDeviceMotion(_:,timestamp:)
         let work = {
             self.currentGameType = gameType
             self.isSessionActive = true
@@ -1375,6 +1583,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
 
             let sparc = self.sparcService.getCurrentSPARC()
             self.sparcHistory.append(sparc)
+            self.sparcService.markRepBoundary()
 
             let romText = String(format: "%.1f", finalROM)
             let sparcText = String(format: "%.1f", sparc)
@@ -1435,6 +1644,12 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                 self.refreshProviderHUD()
             }
             self.updateFastMovementState(with: motion)
+
+            // Forward gyro data to gyro-based rep/ROM state machine for Fruit Slicer / Fan the Flame
+            if self.currentGameType == .fruitSlicer || self.currentGameType == .fanOutFlame {
+                let t = Date().timeIntervalSince1970
+                self.gyroRepROMStateMachine?.processDeviceMotion(motion, timestamp: t)
+            }
 
             if !self.isCameraExercise && self.currentGameType.usesIMUOnly {
                 if self.baselineAttitude == nil {
@@ -1756,28 +1971,20 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     private func startHandheldSession(gameType: GameType) {
         // Configure rep detectors per handheld game type
         
+
     switch gameType {
-        case .fruitSlicer:
-            handheldRepDetector.startSession(gameType: .fruitSlicer)
-            // FruitSlicer uses direction-change counting — enable detector
-            isHandheldRepDetectorActive = true
-        case .fanOutFlame:
-            handheldRepDetector.startSession(gameType: .fanOutFlame)
-            // Fan the Flame uses direction-change counting — enable detector
-            isHandheldRepDetectorActive = true
-            break // IMU rep detector deprecated; nothing to do
-        case .followCircle:
-            // ARKit circular angle accumulation for full-circle reps
-            FlexaLog.motion.info("🚀 [SETUP] Starting ARKit circular rep detector for \(gameType.displayName)")
-            handheldRepDetector.startSession(gameType: .followCircle)
-            isHandheldRepDetectorActive = true
-            // Ensure IMU is idle to prevent duplicate counts
-            // IMU rep detector removed; nothing to shutdown
-        default:
-            break // IMU rep detector deprecated; nothing to do
-        }
-        
-    FlexaLog.motion.info("⚡️ [IMURep] IMU rep detection removed; HandheldRepDetector handles rep detection for \(gameType.displayName)")
+    case .fruitSlicer, .fanOutFlame:
+        // REMOVE all legacy rep/ROM detectors for these games. New gyro-based logic will be used.
+        isHandheldRepDetectorActive = false
+        handheldRepDetector.reset()
+        FlexaLog.motion.info("🧹 [GyroRep] Legacy rep/ROM detectors removed for \(gameType.displayName). Will use new gyro-based rep/ROM logic.")
+    case .followCircle:
+        // Keep existing logic for followCircle
+        handheldRepDetector.startSession(gameType: .followCircle)
+        isHandheldRepDetectorActive = true
+    default:
+        break
+    }
         
         // Clear IMU calibration state
         self.imuGyroBias = CMRotationRate(x: 0, y: 0, z: 0)
@@ -1790,7 +1997,10 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         // Determine motion profiles for ROM/SPARC pipelines
         let motionProfile: HandheldROMCalculator.MotionProfile
         switch gameType {
-        case .fruitSlicer, .fanOutFlame:
+        case .fruitSlicer:
+            motionProfile = .pendulum
+        case .fanOutFlame:
+            // Fan the Flame uses an arc-style motion - use circular ROM calculation
             motionProfile = .pendulum
         case .followCircle:
             motionProfile = .circular
@@ -2028,7 +2238,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         let perRepROM = romPerRep.allElements.filter { $0.isFinite }
         let sparcHistoryValues: [Double] = sparcHistory.allElements.filter { $0.isFinite }
 
-        let sparcPoints: [SPARCPoint] = sparcService.getSPARCDataPoints()
+        let sparcRaw = isCameraExercise ? sparcService.getSPARCDataPoints() : sparcService.getSPARCDataPoints(filteredBy: .arkit)
+        let sparcPoints: [SPARCPoint] = sparcRaw
             .filter { $0.sparcValue.isFinite }
             .map { dataPoint in
                 SPARCPoint(sparc: dataPoint.sparcValue, timestamp: dataPoint.timestamp)
@@ -2060,7 +2271,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         let perRepROM = romPerRep.allElements.filter { $0.isFinite }
         let sparcHistoryValues: [Double] = sparcHistory.allElements.filter { $0.isFinite }
 
-        let sparcPoints: [SPARCPoint] = sparcService.getSPARCDataPoints()
+        let sparcRaw = isCameraExercise ? sparcService.getSPARCDataPoints() : sparcService.getSPARCDataPoints(filteredBy: .arkit)
+        let sparcPoints: [SPARCPoint] = sparcRaw
             .filter { $0.sparcValue.isFinite }
             .map { dataPoint in
                 SPARCPoint(sparc: dataPoint.sparcValue, timestamp: dataPoint.timestamp)
@@ -2099,7 +2311,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         // SPARC computation for handheld games
         let sparcScore = sparcService.getCurrentSPARC()
         
-        let sparcTimeline = sparcService.getSPARCDataPoints().map { 
+        let sparcRaw = sparcService.getSPARCDataPoints(filteredBy: .arkit)
+        let sparcTimeline = sparcRaw.map {
             SPARCPoint(sparc: $0.sparcValue, timestamp: $0.timestamp)
         }
 
@@ -2161,8 +2374,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
     }
     
     private func saveSessionFile() {
-        let sparcTimeline: [SPARCPoint] = sparcService
-            .getSPARCDataPoints()
+        let sparcRaw = isCameraExercise ? sparcService.getSPARCDataPoints() : sparcService.getSPARCDataPoints(filteredBy: .arkit)
+        let sparcTimeline: [SPARCPoint] = sparcRaw
             .filter { $0.sparcValue.isFinite }
             .map { dataPoint in
                 SPARCPoint(sparc: dataPoint.sparcValue, timestamp: dataPoint.timestamp)
@@ -2197,8 +2410,8 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         let repDates = romPerRepTimestamps.allElements.map { Date(timeIntervalSince1970: $0) }
     let sparcHistoryValues: [Double] = sparcHistory.allElements.filter { $0.isFinite }
 
-        let sparcTimeline: [SPARCDataPoint] = sparcService
-            .getSPARCDataPoints()
+        let sparcRaw = isCameraExercise ? sparcService.getSPARCDataPoints() : sparcService.getSPARCDataPoints(filteredBy: .arkit)
+        let sparcTimeline: [SPARCDataPoint] = sparcRaw
             .filter { $0.sparcValue.isFinite }
 
         let performanceData = ExercisePerformanceData(
@@ -2395,28 +2608,33 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                 return
             }
 
-            // Set up video output delegate
             if let output = self.videoOutput {
                 output.setSampleBufferDelegate(self, queue: self.cameraQueue)
             }
 
-            // Start session if not running
             if !session.isRunning {
-                session.startRunning()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    session.startRunning()
+                    let running = session.isRunning
+                    DispatchQueue.main.async {
+                        if running {
+                            self.updatePreviewSession(session)
+                            NotificationCenter.default.post(name: .SharedCaptureSessionReady, object: session)
+                            FlexaLog.motion.info("Camera session resumed successfully")
+                        } else {
+                            self.updatePreviewSession(nil)
+                            FlexaLog.motion.error("Camera session resume failed")
+                        }
+                        completion(running)
+                    }
+                }
+                return
             }
 
-            let running = session.isRunning
-
-            if running {
-                self.updatePreviewSession(session)
-                NotificationCenter.default.post(name: .SharedCaptureSessionReady, object: session)
-                FlexaLog.motion.info("Camera session resumed successfully")
-            } else {
-                self.updatePreviewSession(nil)
-                FlexaLog.motion.error("Camera session resume failed")
-            }
-
-            completion(running)
+            self.updatePreviewSession(session)
+            NotificationCenter.default.post(name: .SharedCaptureSessionReady, object: session)
+            FlexaLog.motion.info("Camera session resumed successfully")
+            completion(true)
         }
     }
     
@@ -2558,6 +2776,11 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
                         // Mirror only if it's a front camera
                         connection.isVideoMirrored = (captureDevice.position == .front)
                         FlexaLog.motion.debug("🎥 [Camera] Video mirroring set to: \(connection.isVideoMirrored) position: \(captureDevice.position.rawValue)")
+                        // Ensure the pose provider only mirrors normalized points when the preview layer is NOT mirrored
+                        if let provider = self.poseProvider as? MediaPipePoseProvider {
+                            provider.shouldMirrorNormalizedPointsForFrontCamera = !connection.isVideoMirrored
+                            FlexaLog.vision.debug("🎯 [MediaPipe] shouldMirrorNormalizedPointsForFrontCamera set to \(provider.shouldMirrorNormalizedPointsForFrontCamera)")
+                        }
                     }
                 }
                 
@@ -2643,7 +2866,9 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         }
 
         if session.isRunning {
-            session.stopRunning()
+            DispatchQueue.global(qos: .userInitiated).async {
+                session.stopRunning()
+            }
         }
 
         updatePreviewSession(nil)
@@ -2867,22 +3092,86 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
         }
     }
     
+    private func cacheFallbackPoseLandmarks(from keypoints: SimplifiedPoseKeypoints) {
+        let expiry = keypoints.timestamp + poseDropoutGracePeriod
+
+        func cache(_ joint: PoseJoint, point: CGPoint?) {
+            guard let point else { return }
+            poseDropoutCache[joint] = PoseCacheEntry(point: point, expiry: expiry)
+        }
+
+        cache(.leftShoulder, point: keypoints.leftShoulder)
+        cache(.rightShoulder, point: keypoints.rightShoulder)
+        cache(.leftElbow, point: keypoints.leftElbow)
+        cache(.rightElbow, point: keypoints.rightElbow)
+        cache(.leftHip, point: keypoints.leftHip)
+        cache(.rightHip, point: keypoints.rightHip)
+    }
+
+    private func fallbackPoint(for joint: PoseJoint, timestamp: TimeInterval) -> CGPoint? {
+        guard let entry = poseDropoutCache[joint] else { return nil }
+        if timestamp > entry.expiry {
+            poseDropoutCache.removeValue(forKey: joint)
+            return nil
+        }
+        return entry.point
+    }
+
+    private func applyPoseFallbacks(to keypoints: SimplifiedPoseKeypoints) -> SimplifiedPoseKeypoints {
+        let timestamp = keypoints.timestamp
+        func resolve(_ joint: PoseJoint, current: CGPoint?) -> CGPoint? {
+            if let current { return current }
+            return fallbackPoint(for: joint, timestamp: timestamp)
+        }
+
+        return SimplifiedPoseKeypoints(
+            timestamp: keypoints.timestamp,
+            leftWrist: resolve(.leftWrist, current: keypoints.leftWrist),
+            rightWrist: resolve(.rightWrist, current: keypoints.rightWrist),
+            leftElbow: resolve(.leftElbow, current: keypoints.leftElbow),
+            rightElbow: resolve(.rightElbow, current: keypoints.rightElbow),
+            leftShoulder: resolve(.leftShoulder, current: keypoints.leftShoulder),
+            rightShoulder: resolve(.rightShoulder, current: keypoints.rightShoulder),
+            nose: resolve(.nose, current: keypoints.nose),
+            neck: resolve(.neck, current: keypoints.neck),
+            leftHip: resolve(.leftHip, current: keypoints.leftHip),
+            rightHip: resolve(.rightHip, current: keypoints.rightHip),
+            leftEye: keypoints.leftEye,
+            rightEye: keypoints.rightEye,
+            leftShoulder3D: keypoints.leftShoulder3D,
+            rightShoulder3D: keypoints.rightShoulder3D,
+            leftElbow3D: keypoints.leftElbow3D,
+            rightElbow3D: keypoints.rightElbow3D,
+            leftShoulderConfidence: keypoints.leftShoulderConfidence,
+            rightShoulderConfidence: keypoints.rightShoulderConfidence,
+            leftElbowConfidence: keypoints.leftElbowConfidence,
+            rightElbowConfidence: keypoints.rightElbowConfidence,
+            leftWristConfidence: keypoints.leftWristConfidence,
+            rightWristConfidence: keypoints.rightWristConfidence,
+            noseConfidence: keypoints.noseConfidence,
+            neckConfidence: keypoints.neckConfidence
+        )
+    }
+
     private func processPoseKeypointsInternal(_ keypoints: SimplifiedPoseKeypoints) {
         let smoothedKeypoints = smoothPoseKeypoints(keypoints)
+        cacheFallbackPoseLandmarks(from: smoothedKeypoints)
+        let resolvedKeypoints = applyPoseFallbacks(to: smoothedKeypoints)
         let timestamp = Date().timeIntervalSince1970
         let rawCameraROM = cameraROMCalculator.calculateROM(
-            from: smoothedKeypoints,
-            jointPreference: preferredCameraJoint
+            from: resolvedKeypoints,
+            jointPreference: preferredCameraJoint,
+            flipY: true
         )
 
         DispatchQueue.main.async {
-            self.poseKeypoints = smoothedKeypoints
-            self.currentPoseKeypoints = smoothedKeypoints
+            self.poseKeypoints = resolvedKeypoints
+            self.currentPoseKeypoints = resolvedKeypoints
             self.lastPoseDetectionTimestamp = timestamp
             self.setCameraObstructionState(obstructed: false, reason: nil)
 
             // Per-frame telemetry of normalized keypoints and confidences
-            self.logPoseKeypoints(smoothedKeypoints)
+            self.logPoseKeypoints(resolvedKeypoints)
 
             guard self.isCameraExercise else { return }
 
@@ -2898,7 +3187,7 @@ final class SimpleMotionService: NSObject, ObservableObject, AVCaptureVideoDataO
             }
 
             self.romHistory.append(validatedROM)
-            self.cameraSmoothnessAnalyzer.processPose(smoothedKeypoints, timestamp: timestamp)
+            self.cameraSmoothnessAnalyzer.processPose(resolvedKeypoints, timestamp: timestamp)
 
             FlexaLog.motion.debug("📐 [ROM Consistency] Camera ROM raw=\(String(format: "%.1f", rawCameraROM))° validated=\(String(format: "%.1f", validatedROM))°")
         }

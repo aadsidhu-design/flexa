@@ -126,10 +126,8 @@ class CameraPreview: UIView {
         }
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = session.inputs.contains(where: { input in
-                guard let deviceInput = input as? AVCaptureDeviceInput else { return false }
-                return deviceInput.device.position == .front
-            })
+            // Enable mirroring so left hand appears on left side like a mirror
+            connection.isVideoMirrored = true
         }
     }
     

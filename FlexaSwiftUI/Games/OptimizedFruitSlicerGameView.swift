@@ -141,7 +141,7 @@ struct OptimizedFruitSlicerGameView: View {
                         }
                         self.gameScene = nil
                         if !self.isHosted {
-                            NavigationCoordinator.shared.showAnalyzing(sessionData: resolvedSession)
+                            // Navigation handled centrally by CleanGameHostView via the posted notification
                         }
                     }
                 }
@@ -269,10 +269,10 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
             NotificationCenter.default.post(name: NSNotification.Name("FruitSlicerBombsChanged"), object: nil, userInfo: ["count": 3])
         }
         
-        // Start spawning fruits. Slightly slower spawn to reduce chaos and CPU pressure
+        // Start spawning fruits - faster spawn rate for more action
         // Use an explicit closure capture for spawnFruit so the action reliably calls the instance method
         let spawnSequence = SKAction.sequence([
-            SKAction.wait(forDuration: 1.6), // Slightly slower spawn
+            SKAction.wait(forDuration: 0.9), // Faster spawn for more gameplay
             SKAction.run { [weak self] in self?.spawnFruit() }
         ])
         run(SKAction.repeatForever(spawnSequence), withKey: "spawnFruits")
@@ -525,9 +525,6 @@ class FruitSlicerScene: SKScene, SKPhysicsContactDelegate {
         slicer.position = CGPoint(x: size.width / 2, y: interpolatedY)
     }
     
-    // Direction-based rep counting is now handled by HandheldRepDetector
-    // via ARKit position data forwarded through receiveARKitTransform
-    // This ensures consistent rep detection across all handheld games
 
     // MARK: - Orientation Handling
     @objc private func handleOrientationChange() {
